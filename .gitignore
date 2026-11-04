@@ -10,5 +10,7 @@ android/.idea/
 android/app/release.keystore
 *.keystore
 *.jks
+*.p12
+signing/
 .DS_Store
 Thumbs.db
