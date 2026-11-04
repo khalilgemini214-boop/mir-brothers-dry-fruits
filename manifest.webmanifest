@@ -1,0 +1,20 @@
+{
+  "name": "Muhammad Mir & Brothers — Dry Fruits",
+  "short_name": "Mir & Brothers",
+  "description": "Accounts, stock, sale bills and broker commission for Muhammad Mir & Brothers.",
+  "start_url": "./index.html#/dashboard",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F2E7",
+  "theme_color": "#1F3D2E",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

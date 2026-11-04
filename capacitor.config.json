@@ -1,0 +1,19 @@
+{
+  "appId": "com.mirmbrothers.dryfruits",
+  "appName": "Mir & Brothers",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": "off",
+      "statsUrl": "",
+      "appReadyTimeout": 20000,
+      "resetWhenUpdate": true
+    },
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

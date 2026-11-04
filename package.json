@@ -1,0 +1,23 @@
+{
+  "name": "mir-brothers-dry-fruits",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Muhammad Mir & Brothers — offline-first dry fruits accounts, stock and sale bills.",
+  "scripts": {
+    "build:web": "node scripts/build.mjs",
+    "sync:android": "npm run build:web && npx cap sync android",
+    "android": "npm run build:web && npx cap sync android && npx cap open android",
+    "android:version": "node scripts/android-version.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.6.0",
+    "@capgo/capacitor-updater": "^8.54.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
+    "archiver": "^7.0.1"
+  }
+}
