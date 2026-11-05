@@ -32,6 +32,10 @@
     try { return window.Capacitor && window.Capacitor.Plugins ? window.Capacitor.Plugins[name] : null; } catch (e) { return null; }
   }
 
+  function isOffline() {
+    try { return navigator.onLine === false; } catch (e) { return false; }
+  }
+
   function feedUrl() {
     const custom = MMB.db && MMB.db.settings && MMB.db.settings.updates ? String(MMB.db.settings.updates.feedUrl || '').trim() : '';
     return custom || String(cfg.feedUrl || '').trim();
@@ -72,14 +76,18 @@
     if (isNative()) {
       const http = plugin('CapacitorHttp');
       if (http && http.get) {
-        const res = await http.get({
-          url: url + (url.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now(),
-          responseType: 'json',
-          connectTimeout: 15000,
-          readTimeout: 15000
-        });
-        if (res && res.status && res.status >= 400) throw new Error('http-' + res.status);
-        return typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        try {
+          const res = await http.get({
+            url: url + (url.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now(),
+            responseType: 'json',
+            connectTimeout: 15000,
+            readTimeout: 15000
+          });
+          if (res && res.status && res.status >= 400) throw new Error('http-' + res.status);
+          return typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        } catch (e) {
+          // Bridge or plugin trouble: retry with the WebView's own fetch below.
+        }
       }
     }
     const res = await fetch(url + (url.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now(), { cache: 'no-store' });
@@ -96,6 +104,7 @@
     if (s.status === 'native-required') return t('settings.nativeRequired', { version: s.nativeRequired ? s.nativeRequired.version : '' });
     if (s.status === 'web-ready') return t('settings.updateAvailable', { version: s.feed ? s.feed.webVersion : '' });
     if (s.status === 'no-feed') return t('settings.feedMissing');
+    if (s.status === 'offline') return t('settings.offline');
     if (s.status === 'error') return t('settings.updateError');
     return t('settings.updatesHint');
   }
@@ -111,6 +120,9 @@
     }
     if (s.status === 'web-ready') {
       return '<button class="btn btn-primary btn-block mt-12" data-upd-reload>' + MMB.icon('refresh') + t('settings.reload') + '</button>';
+    }
+    if (s.status === 'error' || s.status === 'offline') {
+      return '<button class="btn btn-primary btn-block mt-12" data-upd-retry>' + MMB.icon('refresh') + t('settings.retry') + '</button>';
     }
     return '';
   }
@@ -139,6 +151,7 @@
       '<button class="btn btn-sm btn-primary" id="updCheck" ' + (s.checking ? 'disabled' : '') + '>' + (s.checking ? t('settings.checking') : t('settings.checkUpdates')) + '</button>' +
       '</div>' +
       statusButtons() +
+      (s.error && s.status === 'error' ? '<div class="hint mt-8" style="word-break:break-all">' + MMB.esc(t('settings.errorDetail', { code: s.error })) + '</div>' : '') +
       (feedUrlText ? '<div class="hint mt-12" style="word-break:break-all">' + MMB.esc(feedUrlText) + '</div>' : '') +
       '</div>';
   };
@@ -155,6 +168,8 @@
     if (restart) restart.addEventListener('click', function () { MMB.applyDownloadedUpdate(); });
     const reload = box.querySelector('[data-upd-reload]');
     if (reload) reload.addEventListener('click', function () { MMB.reloadWebApp(); });
+    const retry = box.querySelector('[data-upd-retry]');
+    if (retry) retry.addEventListener('click', function () { MMB.checkForUpdates({ manual: true }); });
   };
 
   MMB.dashboardUpdateHTML = function () {
@@ -209,6 +224,7 @@
     try {
       const url = feedUrl();
       if (!url) throw new Error('no-feed');
+      if (isOffline()) throw new Error('offline');
       if (isNative() && !/^https?:\/\//i.test(url)) throw new Error('no-feed');
       const feed = await fetchFeed(url);
       if (!feed || !feed.webVersion) throw new Error('bad-feed');
@@ -271,10 +287,22 @@
       if (opts.manual) MMB.toast(t('settings.updateAvailable', { version: feed.webVersion }), 'gold');
     } catch (e) {
       console.warn('Update check failed', e);
-      s.status = e.message === 'no-feed' ? 'no-feed' : 'error';
-      s.error = e.message || 'error';
+      const code = e && e.message ? String(e.message) : 'error';
+      s.error = code;
+      s.status = code === 'no-feed' ? 'no-feed' : code === 'offline' ? 'offline' : 'error';
+      if (opts.auto) {
+        // A launch-time check should not leave a scary error sitting in Settings.
+        // Offline stays visible so the online listener can retry it.
+        if (code !== 'offline') {
+          s.status = 'idle';
+          s.error = '';
+        }
+      }
       MMB.refreshUpdateUI();
-      if (opts.manual) MMB.toast(e.message === 'no-feed' ? t('settings.updateNoFeed') : t('settings.updateError'), 'error');
+      if (opts.manual) {
+        const msg = code === 'no-feed' ? t('settings.updateNoFeed') : code === 'offline' ? t('settings.offline') : t('settings.updateError');
+        MMB.toast(msg, code === 'offline' ? 'gold' : 'error');
+      }
     } finally {
       s.checking = false;
       MMB.refreshUpdateUI();
@@ -339,6 +367,11 @@
   MMB.initUpdater = function () {
     MMB.notifyAppReady();
     getNativeVersion().then(function () { MMB.refreshUpdateUI(); });
+    window.addEventListener('online', function () {
+      if (MMB.updateState.status !== 'offline') return;
+      const stillAuto = MMB.db && MMB.db.settings && MMB.db.settings.updates ? MMB.db.settings.updates.autoCheck : true;
+      if (stillAuto !== false) MMB.checkForUpdates({ auto: true });
+    });
     if (!isNative()) return;
     const auto = MMB.db && MMB.db.settings && MMB.db.settings.updates ? MMB.db.settings.updates.autoCheck : true;
     if (auto === false) return;
