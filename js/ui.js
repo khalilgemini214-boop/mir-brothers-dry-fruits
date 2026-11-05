@@ -512,6 +512,108 @@
     setTimeout(function () { window.print(); }, 60);
   };
 
+  /* ── PDF bill (download / share) ───────────────────────────── */
+  function nativePlugin(name) {
+    try { return window.Capacitor && window.Capacitor.Plugins ? window.Capacitor.Plugins[name] : null; } catch (e) { return null; }
+  }
+
+  function pdfFileName(sale) {
+    return 'Bill-' + String(sale.billNo || 'bill').replace(/[^0-9A-Za-z_-]+/g, '') + '.pdf';
+  }
+
+  function blobToBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onloadend = function () { resolve(String(reader.result || '').split(',')[1] || ''); };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function saveBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+  }
+
+  MMB.billPDF = async function (sale) {
+    if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) throw new Error('pdf-unavailable');
+    const host = document.createElement('div');
+    host.className = 'bill-export';
+    host.innerHTML = MMB.billHTML(sale);
+    document.body.appendChild(host);
+    try {
+      if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { } }
+      await new Promise(function (resolve) { setTimeout(resolve, 80); });
+      const node = host.querySelector('.bill');
+      const canvas = await window.html2canvas(node, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        width: node.scrollWidth,
+        height: node.scrollHeight,
+        windowWidth: node.scrollWidth
+      });
+      const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a5', orientation: 'portrait', compress: true });
+      const pageW = 148, pageH = 210, margin = 4;
+      const maxW = pageW - margin * 2, maxH = pageH - margin * 2;
+      let w = maxW;
+      let h = canvas.height * w / canvas.width;
+      if (h > maxH) { h = maxH; w = canvas.width * h / canvas.height; }
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (pageW - w) / 2, margin, w, h);
+      return pdf.output('blob');
+    } finally {
+      host.remove();
+    }
+  };
+
+  MMB.downloadSalePDF = async function (sale) {
+    try {
+      MMB.toast(t('stock.pdfWorking'), 'gold');
+      const blob = await MMB.billPDF(sale);
+      saveBlob(blob, pdfFileName(sale));
+      MMB.toast(t('stock.pdfSaved'));
+    } catch (e) {
+      console.warn('PDF failed', e);
+      MMB.toast(t('stock.pdfFailed'), 'error');
+    }
+  };
+
+  MMB.shareSalePDF = async function (sale) {
+    try {
+      MMB.toast(t('stock.pdfWorking'), 'gold');
+      const blob = await MMB.billPDF(sale);
+      const name = pdfFileName(sale);
+      const fs = nativePlugin('Filesystem');
+      const share = nativePlugin('Share');
+      if (fs && fs.writeFile && share && share.share) {
+        const data = await blobToBase64(blob);
+        const written = await fs.writeFile({ path: name, data: data, directory: 'CACHE', recursive: true });
+        await share.share({ title: name, dialogTitle: t('stock.pdfShare'), files: [written.uri] });
+        return;
+      }
+      if (navigator.canShare && typeof File === 'function') {
+        const file = new File([blob], name, { type: 'application/pdf' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: name });
+          return;
+        }
+      }
+      saveBlob(blob, name);
+      MMB.toast(t('stock.pdfSaved'));
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      console.warn('PDF share failed', e);
+      MMB.toast(t('stock.pdfFailed'), 'error');
+    }
+  };
+
   MMB.openBillPreview = function (sale) {
     const prevDir = document.documentElement.dir;
     // The bill is a fixed LTR document, even when the app UI is Urdu.
@@ -519,13 +621,16 @@
     MMB.openSheet({
       title: t('stock.viewBill') + ' · ' + MMB.esc(sale.billNo),
       body: '<div class="bill-scroll">' + MMB.billHTML(sale) + '</div>',
-      footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button><button class="btn btn-primary" id="bpPrint">' + MMB.icon('print') + t('common.print') + '</button>',
+      footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button>' +
+        '<button class="btn btn-soft" id="bpPdf">' + MMB.icon('file') + t('stock.pdf') + '</button>' +
+        '<button class="btn btn-primary" id="bpPrint">' + MMB.icon('print') + t('common.print') + '</button>',
       modal: true,
       sheetClass: 'wide',
       onClose: function () { document.documentElement.dir = prevDir; },
       onMount: function (el, api) {
         const sheet = el.querySelector('.sheet');
         if (sheet) sheet.setAttribute('dir', 'ltr');
+        el.querySelector('#bpPdf').addEventListener('click', function () { MMB.shareSalePDF(sale); });
         el.querySelector('#bpPrint').addEventListener('click', function () { MMB.printSale(sale); });
       }
     });

@@ -26,8 +26,25 @@
   }
 
   /* ── bill form ────────────────────────────────────────────── */
-  function openBillForm(mode, edit) {
+  let pendingBillPrefill = null;
+
+  function openBillForm(mode, edit, prefillLines) {
     const isSale = mode === 'sale';
+    if (!edit && prefillLines && prefillLines.length) pendingBillPrefill = prefillLines;
+    MMB.navigate((isSale ? 'sale/' : 'purchase/') + (edit && edit.id ? edit.id : 'new'));
+  }
+
+  function renderBillForm(root, mode, id) {
+    const isSale = mode === 'sale';
+    const edit = id ? (isSale
+      ? MMB.db.sales.find(function (s) { return s.id === id; })
+      : MMB.db.purchases.find(function (p) { return p.id === id; })) : null;
+    const prefill = edit ? null : pendingBillPrefill;
+    pendingBillPrefill = null;
+    if (id && !edit) {
+      root.innerHTML = '<div class="card card-pad">' + MMB.emptyHTML('search', t('common.noData'), '') + '</div>';
+      return;
+    }
     const state = {
       partyId: edit ? (isSale ? edit.customerId : edit.supplierId) : null,
       brokerId: edit ? edit.brokerId : null,
@@ -51,6 +68,17 @@
           unit: isCarton ? 'carton' : 'kg',
           cartonKg: l.cartonKg || (p ? p.cartonKg : 10) || 10,
           rate: l.rate
+        };
+      });
+    } else if (prefill && prefill.length) {
+      state.lines = prefill.map(function (l) {
+        return {
+          productId: l.productId || null,
+          name: l.name || '',
+          qty: l.qty != null ? l.qty : '',
+          unit: l.unit === 'carton' ? 'carton' : 'kg',
+          cartonKg: l.cartonKg || MMB.db.settings.defaultCartonKg || 10,
+          rate: l.rate != null ? l.rate : ''
         };
       });
     } else {
@@ -91,16 +119,27 @@
 
     const footer = (isSale
       ? '<button class="btn btn-ghost" id="billSave">' + t('common.save') + '</button><button class="btn btn-primary" id="billSavePrint">' + MMB.icon('print') + t('stock.saveAndPrint') + '</button>'
-      : '<button class="btn btn-ghost" data-close>' + t('common.cancel') + '</button><button class="btn btn-primary" id="billSave">' + t('stock.savePurchase') + '</button>');
+      : '<button class="btn btn-ghost" id="billCancel">' + t('common.cancel') + '</button><button class="btn btn-primary" id="billSave">' + t('stock.savePurchase') + '</button>');
 
-    const sheet = MMB.openSheet({
-      title: title,
-      subtitle: MMB.esc(sub),
-      body: body,
-      footer: footer,
-      modal: window.innerWidth > 760,
-      sheetClass: 'wide',
-      onMount: function (el, api) {
+    root.innerHTML =
+      '<div class="form-page">' +
+      '<div class="form-head">' +
+      '<button class="icon-btn" id="billBack" aria-label="' + MMB.esc(t('common.back')) + '">' + MMB.icon('back') + '</button>' +
+      '<div class="form-head-txt"><h2 class="form-title">' + title + '</h2><div class="form-sub">' + MMB.esc(sub) + '</div></div>' +
+      '</div>' +
+      '<div class="card card-pad">' + body + '</div>' +
+      '<div class="form-actions">' + footer + '</div>' +
+      '</div>';
+
+    function closeForm() {
+      MMB.navigate(isSale ? 'stock/out' : 'stock/in');
+    }
+    root.querySelector('#billBack').addEventListener('click', closeForm);
+    const cancel = root.querySelector('#billCancel');
+    if (cancel) cancel.addEventListener('click', closeForm);
+
+    const el = root;
+    {
         const linesEl = el.querySelector('#billLines');
         const totalsEl = el.querySelector('#billTotals');
         const partyEl = el.querySelector('#billParty');
@@ -347,21 +386,21 @@
           };
           const res = isSale ? MMB.saveSale(data, edit ? edit.id : null) : MMB.savePurchase(data, edit ? edit.id : null);
           if (!res.ok) { MMB.toast(t('common.error'), 'error'); return; }
-          api.close();
           MMB.toast(isSale ? t('stock.saleSaved') : t('stock.purchaseSaved'));
-          MMB.rerender();
+          closeForm();
           if (print && isSale && res.sale) setTimeout(function () { MMB.printSale(res.sale); }, 260);
         }
 
         el.querySelector('#billSave').addEventListener('click', function () { save(false); });
         const sp = el.querySelector('#billSavePrint');
         if (sp) sp.addEventListener('click', function () { save(true); });
-      }
-    });
-    return sheet;
+    }
   }
 
-  MMB.openSaleForm = function (sale) { return openBillForm('sale', sale || null); };
+  MMB.views.saleForm = { render: function (root, params) { renderBillForm(root, 'sale', params && params.id); } };
+  MMB.views.purchaseForm = { render: function (root, params) { renderBillForm(root, 'purchase', params && params.id); } };
+
+  MMB.openSaleForm = function (sale, prefillLines) { return openBillForm('sale', sale || null, prefillLines); };
   MMB.openPurchaseForm = function (purchase) { return openBillForm('purchase', purchase || null); };
 
   /* ── sale / purchase details ─────────────────────────────── */
@@ -412,8 +451,11 @@
       title: t('stock.saleDetails'),
       subtitle: '#' + sale.billNo,
       body: body,
-      footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button><button class="btn btn-primary" id="sdPrint">' + MMB.icon('print') + t('common.print') + '</button>',
+      footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button>' +
+        '<button class="btn btn-soft" id="sdPdf">' + MMB.icon('file') + t('stock.pdf') + '</button>' +
+        '<button class="btn btn-primary" id="sdPrint">' + MMB.icon('print') + t('common.print') + '</button>',
       onMount: function (el, api) {
+        el.querySelector('#sdPdf').addEventListener('click', function () { MMB.shareSalePDF(sale); });
         el.querySelector('#sdPrint').addEventListener('click', function () { MMB.printSale(sale); });
         el.querySelector('#sdView').addEventListener('click', function () { MMB.openBillPreview(sale); });
         const retBtn = el.querySelector('#sdReturn');
@@ -566,7 +608,7 @@
       '<div class="section-head" style="margin:16px 0 6px"><div class="section-title">' + t('stock.purchaseDetails') + '</div><span class="badge badge-gray">' + p.lines.length + ' ' + (p.lines.length === 1 ? t('common.item') : t('common.items')) + '</span></div>' +
       p.lines.map(function (l, i) {
         const ret = MMB.returnedQty(p.id, i);
-        return '<div class="product-line"><div class="thumb">' + MMB.icon('package') + '</div><div class="row-main"><div class="pname">' + MMB.esc(l.name) + '</div><div class="pmeta">' + MMB.qty(l.qtyKg, 'kg') + ' × ' + MMB.money(l.rate) + (ret > 0 ? ' · ' + t('stock.alreadyReturned', { qty: MMB.qty(ret) }) : '') + '</div></div><div class="pqty num">' + MMB.money(l.amount) + '</div></div>';
+        return '<div class="product-line"><div class="thumb">' + MMB.icon('package') + '</div><div class="row-main"><div class="pname">' + MMB.esc(l.name) + '</div><div class="pmeta">' + MMB.qty(l.qtyKg, 'kg') + ' × ' + MMB.money(l.rate) + (ret > 0 ? ' · ' + t('stock.alreadyReturned', { qty: MMB.qty(ret) }) : '') + '</div></div><div class="pqty num">' + MMB.money(l.amount) + '</div><button class="icon-btn sm" data-sell-line="' + i + '" title="' + MMB.esc(t('stock.sellProduct')) + '" aria-label="' + MMB.esc(t('stock.sellProduct')) + '">' + MMB.icon('cart') + '</button></div>';
       }).join('') +
       '<div class="totals mt-16"><div class="total-row grand"><span>' + t('stock.total') + '</span><span class="v">' + MMB.money(p.total) + '</span></div></div>' +
       (returns.length ? '<div class="section-head" style="margin:16px 0 6px"><div class="section-title">' + t('stock.return') + '</div></div>' +
@@ -582,7 +624,8 @@
       title: t('stock.purchaseDetails'),
       subtitle: p.no,
       body: body,
-      footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button><button class="btn btn-primary" id="pdReturn" ' + (fullyReturned ? 'disabled' : '') + '>' + MMB.icon('refresh') + t('stock.return') + '</button>',
+      footer: '<button class="btn btn-ghost" id="pdReturn" ' + (fullyReturned ? 'disabled' : '') + '>' + MMB.icon('refresh') + t('stock.return') + '</button>' +
+        '<button class="btn btn-primary" id="pdSell">' + MMB.icon('cart') + t('stock.sell') + '</button>',
       onMount: function (el, api) {
         el.querySelector('#pdEdit').addEventListener('click', function () { api.close(); setTimeout(function () { MMB.openPurchaseForm(p); }, 140); });
         el.querySelector('#pdDelete').addEventListener('click', async function () {
@@ -596,6 +639,29 @@
         });
         const rb = el.querySelector('#pdReturn');
         if (rb && !fullyReturned) rb.addEventListener('click', function () { api.close(); setTimeout(function () { openPurchaseReturn(p); }, 140); });
+
+        function sellLines(lines) {
+          api.close();
+          setTimeout(function () { MMB.openSaleForm(null, lines); }, 140);
+        }
+        function saleLinesFrom(lines) {
+          return lines.map(function (l) {
+            const prod = l.productId ? MMB.product(l.productId) : null;
+            return {
+              productId: l.productId, name: l.name,
+              qty: l.qtyKg, unit: 'kg',
+              cartonKg: (prod && prod.cartonKg) || MMB.db.settings.defaultCartonKg || 10,
+              rate: l.rate
+            };
+          });
+        }
+        el.querySelector('#pdSell').addEventListener('click', function () { sellLines(saleLinesFrom(p.lines)); });
+        el.querySelectorAll('[data-sell-line]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            const line = p.lines[Number(b.getAttribute('data-sell-line'))];
+            if (line) sellLines(saleLinesFrom([line]));
+          });
+        });
         el.querySelectorAll('[data-del-return]').forEach(function (b) {
           b.addEventListener('click', async function () {
             const ok = await MMB.confirm({ title: t('common.delete'), body: t('common.cannotUndo'), danger: true, confirmText: t('common.delete') });
@@ -804,18 +870,14 @@
 
         '<div class="stock-summary">' +
         '<span class="pill">' + MMB.icon('scale') + t('stock.stockValue') + ' <strong>' + MMB.money(totals.value) + '</strong></span>' +
-        '<span class="pill">' + MMB.icon('package') + t('stock.totalKg') + ' <strong>' + MMB.qty(totals.qty, 'kg') + '</strong></span>' +
-        '<span class="pill">' + MMB.icon('sparkles') + MMB.db.products.length + ' ' + (MMB.db.products.length === 1 ? t('stock.product') : t('stock.products')) + '</span>' +
         (low.length ? '<span class="pill" style="color:var(--red)">' + MMB.icon('alert') + low.length + ' ' + t('stock.low') + '</span>' : '') +
-        '</div>' +
+        '<div class="stock-tools">' +
+        '<button class="icon-btn sm" id="stockProducts" title="' + MMB.esc(t('stock.manageProducts')) + '" aria-label="' + MMB.esc(t('stock.manageProducts')) + '">' + MMB.icon('package') + '</button>' +
+        '<button class="icon-btn sm" id="stockAdjust" title="' + MMB.esc(t('stock.adjust')) + '" aria-label="' + MMB.esc(t('stock.adjust')) + '">' + MMB.icon('scale') + '</button>' +
+        '<button class="icon-btn sm" id="stockAdjustHistory" title="' + MMB.esc(t('stock.adjustHistory')) + '" aria-label="' + MMB.esc(t('stock.adjustHistory')) + '">' + MMB.icon('clock') + '</button>' +
+        '</div></div>' +
 
-        '<div class="row-flex wrap gap-8" style="margin-bottom:12px">' +
-        '<button class="btn btn-sm btn-ghost" id="stockProducts">' + MMB.icon('package') + t('stock.manageProducts') + '</button>' +
-        '<button class="btn btn-sm btn-ghost" id="stockAdjust">' + MMB.icon('scale') + t('stock.adjust') + '</button>' +
-        '<button class="btn btn-sm btn-ghost" id="stockAdjustHistory">' + MMB.icon('clock') + t('stock.adjustHistory') + '</button>' +
-        '</div>' +
-
-        '<div class="card card-pad" style="padding:12px 16px;margin-bottom:12px"><div class="input-wrap">' + MMB.icon('search') +
+        '<div class="card card-pad" style="padding:9px 14px;margin-bottom:10px"><div class="input-wrap">' + MMB.icon('search') +
         '<input class="input" id="stockSearch" placeholder="' + MMB.esc(t('common.search')) + '…" value="' + MMB.esc(stockSearch) + '" autocomplete="off"></div></div>' +
         '<div id="stockList"></div>';
 

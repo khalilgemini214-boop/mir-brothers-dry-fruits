@@ -14,7 +14,11 @@
     "@capacitor/app": "^8.1.2",
     "@capacitor/browser": "^8.0.5",
     "@capacitor/core": "^8.6.0",
-    "@capgo/capacitor-updater": "^8.54.1"
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3",
+    "@capgo/capacitor-updater": "^8.54.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",

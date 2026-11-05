@@ -21,12 +21,16 @@
     if (parts[0] === 'accounts') return { name: 'accounts' };
     if (parts[0] === 'account' && parts[1]) return { name: 'account', id: parts[1] };
     if (parts[0] === 'stock') return { name: 'stock', tab: parts[1] === 'out' ? 'out' : 'in' };
+    if (parts[0] === 'sale') return { name: 'saleForm', id: parts[1] && parts[1] !== 'new' ? parts[1] : null };
+    if (parts[0] === 'purchase') return { name: 'purchaseForm', id: parts[1] && parts[1] !== 'new' ? parts[1] : null };
     if (parts[0] === 'settings') return { name: 'settings' };
     return { name: 'dashboard' };
   }
 
   function setNav(route) {
-    const key = route.name === 'account' ? 'accounts' : route.name;
+    const key = route.name === 'account' ? 'accounts'
+      : (route.name === 'saleForm' || route.name === 'purchaseForm') ? 'stock'
+        : route.name;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
       a.classList.toggle('active', a.getAttribute('data-nav') === key);
     });
@@ -45,6 +49,13 @@
     } else if (route.name === 'stock') {
       title = t('stock.title');
       sub = route.tab === 'out' ? t('stock.outDesc') : t('stock.inDesc');
+    } else if (route.name === 'saleForm' || route.name === 'purchaseForm') {
+      const isSale = route.name === 'saleForm';
+      const rec = route.id ? (isSale
+        ? MMB.db.sales.find(function (s) { return s.id === route.id; })
+        : MMB.db.purchases.find(function (p) { return p.id === route.id; })) : null;
+      title = rec ? (isSale ? t('stock.editSale') : t('stock.editPurchase')) : (isSale ? t('stock.newSale') : t('stock.newPurchase'));
+      sub = rec ? (isSale ? '#' + rec.billNo : rec.no) : (isSale ? t('stock.billNo') + ' ' + MMB.nextBillNo() : MMB.nextPurchaseNo());
     } else if (route.name === 'settings') {
       title = t('settings.title');
       sub = t('settings.subtitle');
@@ -239,6 +250,8 @@
       if (MMB.hasOverlay()) { MMB.closeTop(); return; }
       const route = parseRoute();
       if (route.name === 'account') MMB.navigate('accounts');
+      else if (route.name === 'saleForm') MMB.navigate('stock/out');
+      else if (route.name === 'purchaseForm') MMB.navigate('stock/in');
       else if (route.name !== 'dashboard') MMB.navigate('dashboard');
       else if (app.minimizeApp) app.minimizeApp();
     });
