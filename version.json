@@ -1,6 +1,6 @@
 {
-  "version": "1.0.2",
-  "versionCode": 3,
+  "version": "1.0.3",
+  "versionCode": 4,
   "minNativeVersion": "1.0.2",
-  "notes": "Sale and purchase forms open as full pages, stock screens are more compact, purchase details can start a sale, Urdu broker terms updated, and sale bills can be saved as a PDF and shared to WhatsApp."
+  "notes": "Bill PDFs now keep the Urdu text intact when downloaded or shared to WhatsApp; the Dalali charge is labelled Brokerage in English."
 }

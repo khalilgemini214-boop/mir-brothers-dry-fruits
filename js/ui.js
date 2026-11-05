@@ -591,8 +591,8 @@
       const node = host.querySelector('.bill');
       if (!node) throw new Error('no-bill');
       await new Promise(function (resolve) { setTimeout(resolve, 30); });
-      const w = Math.max(1, Math.ceil(node.scrollWidth));
-      const h = Math.max(1, Math.ceil(node.scrollHeight));
+      const w = Math.max(1, Math.ceil(node.scrollWidth) + 1);
+      const h = Math.max(1, Math.ceil(node.scrollHeight) + 1);
       const scale = 2.4;
       const css = await billExportCSS();
       const markup = new XMLSerializer().serializeToString(node);
