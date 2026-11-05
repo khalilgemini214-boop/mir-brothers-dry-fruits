@@ -20,8 +20,6 @@
       TYPES.forEach(function (tp) { counts[tp] = db.accounts.filter(function (a) { return a.type === tp; }).length; });
 
       root.innerHTML =
-        '<div class="page-head"><div><h2 class="page-title">' + t('accounts.title') + '</h2><p class="page-sub">' + t('accounts.subtitle') + '</p></div>' +
-        '<div class="head-actions"><button class="btn btn-primary only-desktop" id="newAccountBtn">' + MMB.icon('plus') + t('accounts.new') + '</button></div></div>' +
         '<div class="card card-pad" style="padding:14px 16px;margin-bottom:14px">' +
         '<div class="input-wrap">' + MMB.icon('search') + '<input class="input" id="accSearch" placeholder="' + MMB.esc(t('accounts.searchPlaceholder')) + '" value="' + MMB.esc(query) + '" autocomplete="off"></div>' +
         '<div class="chips" style="margin-top:11px" id="accChips">' +
@@ -90,10 +88,7 @@
           renderList();
         });
       });
-      const newBtn = root.querySelector('#newAccountBtn');
-      if (newBtn) newBtn.addEventListener('click', openNew);
-
-      MMB.setFAB('<button class="fab" id="accFab" aria-label="' + MMB.esc(t('accounts.new')) + '">' + MMB.icon('plus') + '</button>');
+      MMB.setFAB('<button class="fab" id="accFab" aria-label="' + MMB.esc(t('accounts.new')) + '" title="' + MMB.esc(t('accounts.new')) + '">' + MMB.icon('plus') + '</button>');
       const fab = document.getElementById('accFab');
       if (fab) fab.addEventListener('click', openNew);
 
