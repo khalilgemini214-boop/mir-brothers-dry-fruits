@@ -541,8 +541,93 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
   }
 
-  MMB.billPDF = async function (sale) {
-    if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) throw new Error('pdf-unavailable');
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  let billCssCache = null;
+  /* The bill CSS with the web fonts inlined, so an SVG image of the bill
+     can load them (an <img> cannot request external files). */
+  function billExportCSS() {
+    if (billCssCache) return billCssCache;
+    billCssCache = (async function () {
+      const cssUrl = new URL('css/app.css', document.baseURI);
+      const res = await fetch(cssUrl.href);
+      if (!res.ok) throw new Error('css-' + res.status);
+      let css = await res.text();
+      const found = [];
+      css.replace(/url\(['"]?([^'")]+\.woff2)['"]?\)/g, function (m, u) {
+        if (found.indexOf(u) === -1) found.push(u);
+        return m;
+      });
+      const embedded = {};
+      await Promise.all(found.map(async function (u) {
+        const r = await fetch(new URL(u, cssUrl).href);
+        if (!r.ok) throw new Error('font-' + r.status);
+        embedded[u] = 'data:font/woff2;base64,' + arrayBufferToBase64(await r.arrayBuffer());
+      }));
+      return css.replace(/url\(['"]?([^'")]+\.woff2)['"]?\)/g, function (m, u) {
+        return 'url("' + (embedded[u] || u) + '")';
+      });
+    })().catch(function (e) { billCssCache = null; throw e; });
+    return billCssCache;
+  }
+
+  /* Render the bill with the browser's own layout engine (SVG foreignObject)
+     so Urdu/RTL text keeps its shaping. html2canvas lays RTL text out
+     left-to-right and garbles it. */
+  async function billCanvasFromSVG(sale) {
+    const host = document.createElement('div');
+    host.className = 'bill-export';
+    host.innerHTML = MMB.billHTML(sale);
+    document.body.appendChild(host);
+    try {
+      const node = host.querySelector('.bill');
+      if (!node) throw new Error('no-bill');
+      await new Promise(function (resolve) { setTimeout(resolve, 30); });
+      const w = Math.max(1, Math.ceil(node.scrollWidth));
+      const h = Math.max(1, Math.ceil(node.scrollHeight));
+      const scale = 2.4;
+      const css = await billExportCSS();
+      const markup = new XMLSerializer().serializeToString(node);
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + Math.round(w * scale) + '" height="' + Math.round(h * scale) + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+        '<style type="text/css"><![CDATA[' + css + ']]></style>' +
+        '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
+        markup +
+        '</foreignObject></svg>';
+      // A blob: URL would taint the canvas; a data: URL stays same-origin.
+      const bytes = new TextEncoder().encode(svg);
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      const url = 'data:image/svg+xml;base64,' + btoa(binary);
+      const img = new Image();
+      img.src = url;
+      if (img.decode) await img.decode();
+      else await new Promise(function (resolve, reject) { img.onload = resolve; img.onerror = reject; });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    } finally {
+      host.remove();
+    }
+  }
+
+  async function billCanvasFromHTML(sale) {
+    if (!window.html2canvas) throw new Error('pdf-unavailable');
     const host = document.createElement('div');
     host.className = 'bill-export';
     host.innerHTML = MMB.billHTML(sale);
@@ -551,7 +636,7 @@
       if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { } }
       await new Promise(function (resolve) { setTimeout(resolve, 80); });
       const node = host.querySelector('.bill');
-      const canvas = await window.html2canvas(node, {
+      return await window.html2canvas(node, {
         scale: 2,
         backgroundColor: '#ffffff',
         useCORS: true,
@@ -560,17 +645,28 @@
         height: node.scrollHeight,
         windowWidth: node.scrollWidth
       });
-      const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a5', orientation: 'portrait', compress: true });
-      const pageW = 148, pageH = 210, margin = 4;
-      const maxW = pageW - margin * 2, maxH = pageH - margin * 2;
-      let w = maxW;
-      let h = canvas.height * w / canvas.width;
-      if (h > maxH) { h = maxH; w = canvas.width * h / canvas.height; }
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (pageW - w) / 2, margin, w, h);
-      return pdf.output('blob');
     } finally {
       host.remove();
     }
+  }
+
+  MMB.billPDF = async function (sale) {
+    if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('pdf-unavailable');
+    let canvas;
+    try {
+      canvas = await billCanvasFromSVG(sale);
+    } catch (e) {
+      console.warn('SVG bill render failed, falling back', e);
+      canvas = await billCanvasFromHTML(sale);
+    }
+    const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a5', orientation: 'portrait', compress: true });
+    const pageW = 148, pageH = 210, margin = 4;
+    const maxW = pageW - margin * 2, maxH = pageH - margin * 2;
+    let w = maxW;
+    let h = canvas.height * w / canvas.width;
+    if (h > maxH) { h = maxH; w = canvas.width * h / canvas.height; }
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (pageW - w) / 2, margin, w, h);
+    return pdf.output('blob');
   };
 
   MMB.downloadSalePDF = async function (sale) {

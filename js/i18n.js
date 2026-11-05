@@ -123,7 +123,7 @@
     'stock.qtyKg': 'Quantity (kg)', 'stock.qtyCartons': 'Quantity (cartons)', 'stock.cartonKg': 'Kg / carton',
     'stock.rate': 'Rate / kg', 'stock.lineTotal': 'Line total', 'stock.addLine': 'Add another product',
     'stock.removeLine': 'Remove line', 'stock.goodsTotal': 'Goods total', 'stock.charges': 'Charges',
-    'stock.bardana': 'Bardana (bags)', 'stock.dalali': 'Dalali', 'stock.nikhara': 'Nikhara',
+    'stock.bardana': 'Bardana (bags)', 'stock.dalali': 'Brokerage', 'stock.nikhara': 'Nikhara',
     'stock.chhappai': 'Chhappai', 'stock.pehri': 'Pehri', 'stock.tulai': 'Tulai (weighing)',
     'stock.other': 'Other', 'stock.billTotal': 'Bill total', 'stock.commissionNote': 'Brokerage {rate}% on goods: {amount} (paid by you)',
     'stock.vehicle': 'Vehicle no.', 'stock.destination': 'Destination / mandi', 'stock.notePlaceholder': 'Any note for this bill…',
