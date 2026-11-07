@@ -15,6 +15,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import archiver from 'archiver';
@@ -99,6 +100,8 @@ async function main() {
 
   const zipPath = path.join(DIST, 'updates', zipName);
   await zipDir(WWW, zipPath);
+  // Capacitor Updater requires a SHA-256 checksum for manual bundle downloads.
+  const checksum = crypto.createHash('sha256').update(fs.readFileSync(zipPath)).digest('hex');
 
   const feed = {
     webVersion,
@@ -108,6 +111,7 @@ async function main() {
     apkVersion: version,
     apkUrl,
     zipUrl,
+    checksum,
     notes,
     publishedAt: new Date().toISOString()
   };

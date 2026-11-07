@@ -261,7 +261,7 @@
         if (!feed.zipUrl) throw new Error('no-zip');
         s.status = 'downloading';
         MMB.refreshUpdateUI();
-        const bundle = await updater.download({ url: feed.zipUrl, version: feed.webVersion });
+        const bundle = await updater.download({ url: feed.zipUrl, version: feed.webVersion, checksum: feed.checksum || '' });
         if (!bundle || !bundle.id) throw new Error('download-failed');
         await updater.next({ id: bundle.id });
         s.bundleId = bundle.id;

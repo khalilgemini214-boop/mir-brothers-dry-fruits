@@ -1,6 +1,6 @@
 {
-  "version": "1.0.3",
-  "versionCode": 4,
-  "minNativeVersion": "1.0.2",
-  "notes": "Bill PDFs now keep the Urdu text intact when downloaded or shared to WhatsApp; the Dalali charge is labelled Brokerage in English."
+  "version": "1.0.4",
+  "versionCode": 5,
+  "minNativeVersion": "1.0.4",
+  "notes": "Fixes app updates: the web bundle download now sends the checksum the updater requires, so future updates install without a new APK. Also includes the bill PDF Urdu fix and the Brokerage label."
 }
