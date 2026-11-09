@@ -579,9 +579,43 @@
     return billCssCache;
   }
 
-  /* Render the bill with the browser's own layout engine (SVG foreignObject)
+  /* Render a DOM node with the browser's own layout engine (SVG foreignObject)
      so Urdu/RTL text keeps its shaping. html2canvas lays RTL text out
      left-to-right and garbles it. */
+  async function elementCanvasFromSVG(node, scale) {
+    await new Promise(function (resolve) { setTimeout(resolve, 30); });
+    const w = Math.max(1, Math.ceil(node.scrollWidth) + 1);
+    const h = Math.max(1, Math.ceil(node.scrollHeight) + 1);
+    scale = scale || 2;
+    const css = await billExportCSS();
+    const markup = new XMLSerializer().serializeToString(node);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + Math.round(w * scale) + '" height="' + Math.round(h * scale) + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+      '<style type="text/css"><![CDATA[' + css + ']]></style>' +
+      '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
+      markup +
+      '</foreignObject></svg>';
+    // A blob: URL would taint the canvas; a data: URL stays same-origin.
+    const bytes = new TextEncoder().encode(svg);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    const url = 'data:image/svg+xml;base64,' + btoa(binary);
+    const img = new Image();
+    img.src = url;
+    if (img.decode) await img.decode();
+    else await new Promise(function (resolve, reject) { img.onload = resolve; img.onerror = reject; });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
   async function billCanvasFromSVG(sale) {
     const host = document.createElement('div');
     host.className = 'bill-export';
@@ -590,61 +624,35 @@
     try {
       const node = host.querySelector('.bill');
       if (!node) throw new Error('no-bill');
-      await new Promise(function (resolve) { setTimeout(resolve, 30); });
-      const w = Math.max(1, Math.ceil(node.scrollWidth) + 1);
-      const h = Math.max(1, Math.ceil(node.scrollHeight) + 1);
-      const scale = 2.4;
-      const css = await billExportCSS();
-      const markup = new XMLSerializer().serializeToString(node);
-      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + Math.round(w * scale) + '" height="' + Math.round(h * scale) + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-        '<style type="text/css"><![CDATA[' + css + ']]></style>' +
-        '<foreignObject x="0" y="0" width="' + w + '" height="' + h + '">' +
-        markup +
-        '</foreignObject></svg>';
-      // A blob: URL would taint the canvas; a data: URL stays same-origin.
-      const bytes = new TextEncoder().encode(svg);
-      let binary = '';
-      const chunk = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunk) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-      }
-      const url = 'data:image/svg+xml;base64,' + btoa(binary);
-      const img = new Image();
-      img.src = url;
-      if (img.decode) await img.decode();
-      else await new Promise(function (resolve, reject) { img.onload = resolve; img.onerror = reject; });
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      return canvas;
+      return await elementCanvasFromSVG(node, 2.4);
     } finally {
       host.remove();
     }
   }
 
-  async function billCanvasFromHTML(sale) {
+  async function elementCanvasFromHTML(node, scale) {
     if (!window.html2canvas) throw new Error('pdf-unavailable');
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { } }
+    await new Promise(function (resolve) { setTimeout(resolve, 80); });
+    return await window.html2canvas(node, {
+      scale: scale || 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+      width: node.scrollWidth,
+      height: node.scrollHeight,
+      windowWidth: node.scrollWidth
+    });
+  }
+
+  async function billCanvasFromHTML(sale) {
     const host = document.createElement('div');
     host.className = 'bill-export';
     host.innerHTML = MMB.billHTML(sale);
     document.body.appendChild(host);
     try {
-      if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { } }
-      await new Promise(function (resolve) { setTimeout(resolve, 80); });
       const node = host.querySelector('.bill');
-      return await window.html2canvas(node, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        logging: false,
-        width: node.scrollWidth,
-        height: node.scrollHeight,
-        windowWidth: node.scrollWidth
-      });
+      return await elementCanvasFromHTML(node, 2);
     } finally {
       host.remove();
     }
@@ -667,6 +675,95 @@
     if (h > maxH) { h = maxH; w = canvas.width * h / canvas.height; }
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (pageW - w) / 2, margin, w, h);
     return pdf.output('blob');
+  };
+
+  /* ── ledger statement PDF ─────────────────────────────────── */
+  function ledgerPDFName(account) {
+    const name = String(account && account.name || 'ledger')
+      .replace(/[^0-9A-Za-z\u0600-\u06FF_-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'ledger';
+    return name + '-ledger-' + MMB.todayISO() + '.pdf';
+  }
+
+  /* Lay a long statement document across A4 pages, breaking between rows. */
+  async function docBlobFromHTML(html) {
+    if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('pdf-unavailable');
+    const host = document.createElement('div');
+    host.className = 'doc-export';
+    host.innerHTML = html;
+    document.body.appendChild(host);
+    try {
+      const node = host.firstElementChild;
+      if (!node) throw new Error('no-doc');
+      await Promise.all(Array.prototype.map.call(node.querySelectorAll('img'), function (img) {
+        if (img.complete) return null;
+        return new Promise(function (resolve) { img.onload = img.onerror = resolve; });
+      }));
+      if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { } }
+      const rowCount = node.querySelectorAll('tbody tr').length;
+      const renderScale = rowCount > 200 ? 1.5 : rowCount > 80 ? 1.9 : 2.2;
+      let canvas;
+      try {
+        canvas = await elementCanvasFromSVG(node, renderScale);
+      } catch (e) {
+        console.warn('SVG statement render failed, falling back', e);
+        canvas = await elementCanvasFromHTML(node, Math.min(renderScale, 2));
+      }
+      const pageW = 210, pageH = 297, margin = 8;
+      const contentW = pageW - margin * 2;   // 194 mm
+      const contentH = pageH - margin * 2;   // 281 mm
+      const pxPerMm = canvas.width / contentW;
+      const pagePx = Math.floor(contentH * pxPerMm);
+      const rect = node.getBoundingClientRect();
+      const scalepx = canvas.width / Math.max(1, rect.width);
+      const rowBottoms = Array.prototype.map.call(node.querySelectorAll('tbody tr'), function (r) {
+        return Math.round((r.getBoundingClientRect().bottom - rect.top) * scalepx);
+      });
+      const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+      let y = 0, pages = 0;
+      while (y < canvas.height - 1) {
+        let sliceH = Math.min(pagePx, canvas.height - y);
+        if (y + sliceH < canvas.height - 1) {
+          let breakAt = 0;
+          rowBottoms.forEach(function (b) {
+            if (b > y && b <= y + pagePx && b > breakAt) breakAt = b;
+          });
+          if (breakAt > y + pagePx * 0.5) sliceH = breakAt - y;
+        }
+        const slice = document.createElement('canvas');
+        slice.width = canvas.width;
+        slice.height = sliceH;
+        const ctx = slice.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, slice.width, slice.height);
+        ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+        if (pages > 0) pdf.addPage();
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, contentW, sliceH / pxPerMm);
+        y += sliceH;
+        pages++;
+      }
+      for (let i = 1; i <= pages; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(135, 135, 125);
+        pdf.text(i + ' / ' + pages, pageW - margin, pageH - 4, { align: 'right' });
+      }
+      return pdf.output('blob');
+    } finally {
+      host.remove();
+    }
+  }
+
+  MMB.downloadLedgerPDF = async function (account) {
+    try {
+      MMB.toast(t('stock.pdfWorking'), 'gold');
+      const blob = await docBlobFromHTML(MMB.ledgerStatementHTML(account));
+      saveBlob(blob, ledgerPDFName(account));
+      MMB.toast(t('stock.pdfSaved'));
+    } catch (e) {
+      console.warn('Ledger PDF failed', e);
+      MMB.toast(t('stock.pdfFailed'), 'error');
+    }
   };
 
   MMB.downloadSalePDF = async function (sale) {
