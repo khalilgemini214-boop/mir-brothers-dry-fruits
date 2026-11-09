@@ -16,6 +16,8 @@
   MMB.views.accounts = {
     render: function (root) {
       const db = MMB.db;
+      const summary = MMB.summary();
+      const totalBalance = MMB.round(summary.cash + summary.receivable - summary.payable, 2);
       const counts = { all: db.accounts.length };
       TYPES.forEach(function (tp) { counts[tp] = db.accounts.filter(function (a) { return a.type === tp; }).length; });
 
@@ -30,11 +32,16 @@
       root.innerHTML =
         '<div class="card card-pad" style="padding:14px 16px;margin-bottom:14px">' +
         '<div class="input-wrap">' + MMB.icon('search') + '<input class="input" id="accSearch" placeholder="' + MMB.esc(t('accounts.searchPlaceholder')) + '" value="' + MMB.esc(query) + '" autocomplete="off"></div>' +
-        '<div class="chips" style="margin-top:11px" id="accChips">' +
+        '<div class="chips chips-compact" style="margin-top:11px" id="accChips">' +
         ['all'].concat(TYPES).map(function (tp) {
           const label = tp === 'all' ? t('common.all') : t('accounts.type.' + tp);
           return '<button class="chip ' + (filter === tp ? 'active' : '') + '" data-filter="' + tp + '">' + label + '<span class="count">' + counts[tp] + '</span></button>';
         }).join('') + '</div></div>' +
+        '<div class="ledger-summary account-summary">' +
+        '<div class="card"><div class="k">' + t('dashboard.receivable') + '</div><div class="v positive num">' + MMB.money(summary.receivable) + '</div></div>' +
+        '<div class="card"><div class="k">' + t('dashboard.payable') + '</div><div class="v negative num">' + MMB.money(summary.payable) + '</div></div>' +
+        '<div class="card"><div class="k">' + t('accounts.totalBalance') + '</div><div class="v ' + (totalBalance < 0 ? 'negative' : '') + ' num">' + MMB.money(totalBalance) + '</div></div>' +
+        '</div>' +
         '<div id="accountsList"></div>';
 
       const listEl = root.querySelector('#accountsList');
@@ -187,7 +194,7 @@
 
     const body =
       '<div class="field"><label class="label">' + t('ledger.amount') + '</label>' +
-      '<input class="input input-lg num" id="leAmount" data-autofocus type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" value="' + (editing ? entry.amount : '') + '"></div>' +
+      '<input class="input input-lg num" id="leAmount"' + (editing ? '' : ' data-autofocus') + ' type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" value="' + (editing ? entry.amount : '') + '"></div>' +
       '<div class="field mt-12"><label class="label">' + t('common.details') + ' <span class="opt">' + t('common.optional') + '</span></label>' +
       '<input class="input" id="leDetails" maxlength="160" autocomplete="off" placeholder="' + MMB.esc(t('ledger.detailsPlaceholder')) + '" value="' + (editing ? MMB.esc(entry.details) : '') + '"></div>' +
       '<div class="date-time mt-12">' +

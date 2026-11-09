@@ -531,28 +531,34 @@
     });
   }
 
-  /* Share a PDF with the native share sheet (so it can go to WhatsApp), or
+  /* Share a file with the native share sheet (so it can go to WhatsApp), or
      fall back to a browser download. */
-  async function sharePdfBlob(blob, name) {
+  async function shareBlobFile(blob, name, opts) {
+    opts = opts || {};
     const fs = nativePlugin('Filesystem');
     const share = nativePlugin('Share');
     if (fs && fs.writeFile && share && share.share) {
       const data = await blobToBase64(blob);
       const written = await fs.writeFile({ path: name, data: data, directory: 'CACHE', recursive: true });
-      await share.share({ title: name, dialogTitle: t('stock.pdfSharePdf'), files: [written.uri] });
+      await share.share({ title: name, dialogTitle: opts.dialogTitle || t('stock.pdfSharePdf'), files: [written.uri] });
       return true;
     }
     if (navigator.canShare && typeof File === 'function') {
-      const file = new File([blob], name, { type: 'application/pdf' });
+      const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: name });
         return true;
       }
     }
     saveBlob(blob, name);
-    MMB.toast(t('stock.pdfSaved'));
+    MMB.toast(opts.savedToast || t('stock.pdfSaved'));
     return false;
   }
+
+  MMB.shareFile = async function (filename, content, type, opts) {
+    const blob = new Blob([content], { type: type || 'application/octet-stream' });
+    return shareBlobFile(blob, filename, opts);
+  };
 
   function saveBlob(blob, name) {
     const url = URL.createObjectURL(blob);
@@ -782,7 +788,7 @@
     try {
       MMB.toast(t('stock.pdfWorking'), 'gold');
       const blob = await docBlobFromHTML(MMB.ledgerStatementHTML(account));
-      await sharePdfBlob(blob, ledgerPDFName(account));
+      await shareBlobFile(blob, ledgerPDFName(account), { dialogTitle: t('stock.pdfSharePdf') });
     } catch (e) {
       if (e && e.name === 'AbortError') return;
       console.warn('Ledger PDF failed', e);
@@ -806,7 +812,7 @@
     try {
       MMB.toast(t('stock.pdfWorking'), 'gold');
       const blob = await MMB.billPDF(sale);
-      await sharePdfBlob(blob, pdfFileName(sale));
+      await shareBlobFile(blob, pdfFileName(sale), { dialogTitle: t('stock.pdfSharePdf') });
     } catch (e) {
       if (e && e.name === 'AbortError') return;
       console.warn('PDF share failed', e);
@@ -822,8 +828,7 @@
       title: t('stock.viewBill') + ' · ' + MMB.esc(sale.billNo),
       body: '<div class="bill-scroll">' + MMB.billHTML(sale) + '</div>',
       footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button>' +
-        '<button class="btn btn-soft" id="bpPdf">' + MMB.icon('file') + t('stock.pdf') + '</button>' +
-        '<button class="btn btn-primary" id="bpPrint">' + MMB.icon('print') + t('common.print') + '</button>',
+        '<button class="btn btn-soft" id="bpPdf">' + MMB.icon('file') + t('stock.pdf') + '</button>',
       modal: true,
       sheetClass: 'wide',
       onClose: function () { document.documentElement.dir = prevDir; },
@@ -831,7 +836,6 @@
         const sheet = el.querySelector('.sheet');
         if (sheet) sheet.setAttribute('dir', 'ltr');
         el.querySelector('#bpPdf').addEventListener('click', function () { MMB.shareSalePDF(sale); });
-        el.querySelector('#bpPrint').addEventListener('click', function () { MMB.printSale(sale); });
       }
     });
   };

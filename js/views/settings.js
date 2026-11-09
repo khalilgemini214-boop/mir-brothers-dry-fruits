@@ -4,15 +4,23 @@
   const t = MMB.t;
   MMB.views = MMB.views || {};
 
-  MMB.downloadBackup = function () {
-    const json = MMB.exportJSON();
-    const name = 'mir-brothers-backup-' + MMB.todayISO() + '.json';
-    MMB.download(name, json, 'application/json');
-    MMB.toast(t('settings.backupDone'));
-    MMB.rerender();
+  MMB.downloadBackup = async function () {
+    try {
+      const json = MMB.exportJSON();
+      const name = 'mir-brothers-backup-' + MMB.todayISO() + '.json';
+      await MMB.shareFile(name, json, 'application/json', {
+        dialogTitle: t('settings.shareBackup'),
+        savedToast: t('settings.backupDone')
+      });
+      MMB.rerender();
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      console.warn('Backup share failed', e);
+      MMB.toast(t('common.shareFailed'), 'error');
+    }
   };
 
-  function downloadCSV(kind, filename) {
+  async function downloadCSV(kind, filename) {
     let csv = '';
     if (kind === 'accounts') csv = MMB.csvAccounts();
     else if (kind === 'ledger') csv = MMB.csvLedger();
@@ -20,8 +28,16 @@
     else if (kind === 'purchases') csv = MMB.csvPurchases();
     else if (kind === 'returns') csv = MMB.csvReturns();
     else if (kind === 'stock') csv = MMB.csvStock();
-    MMB.download(filename, csv, 'text/csv;charset=utf-8');
-    MMB.toast(t('common.done'));
+    try {
+      await MMB.shareFile(filename, csv, 'text/csv;charset=utf-8', {
+        dialogTitle: t('settings.shareExport'),
+        savedToast: t('common.done')
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      console.warn('CSV share failed', e);
+      MMB.toast(t('common.shareFailed'), 'error');
+    }
   }
 
   function openPinModal(mode) {
@@ -174,7 +190,6 @@
         '<p style="margin-top:8px">' + t('settings.madeFor') + '</p>' +
         '<div class="version-pill">' + MMB.icon('shield') + 'v' + MMB.esc(MMB_CONFIG.version + (MMB_CONFIG.build && MMB_CONFIG.build !== 'dev' ? ' · ' + MMB_CONFIG.build : '')) + '</div>' +
         '<p class="hint" style="margin-top:12px">' + t('settings.backupHint') + '</p>' +
-        '<p class="hint" style="margin-top:5px">' + t('settings.printHint') + '</p>' +
         '</div></div></section>';
 
       /* shop save */

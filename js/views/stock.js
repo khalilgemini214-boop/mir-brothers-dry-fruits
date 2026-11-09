@@ -118,7 +118,7 @@
         '</div>' : '<div class="field mt-16"><label class="label">' + t('common.notes') + ' <span class="opt">' + t('common.optional') + '</span></label><input class="input" id="billNote" maxlength="120" value="' + MMB.esc(state.note) + '"></div>');
 
     const footer = (isSale
-      ? '<button class="btn btn-ghost" id="billSave">' + t('common.save') + '</button><button class="btn btn-primary" id="billSavePrint">' + MMB.icon('print') + t('stock.saveAndPrint') + '</button>'
+      ? '<button class="btn btn-primary" id="billSave">' + t('stock.saveSale') + '</button>'
       : '<button class="btn btn-ghost" id="billCancel">' + t('common.cancel') + '</button><button class="btn btn-primary" id="billSave">' + t('stock.savePurchase') + '</button>');
 
     root.innerHTML =
@@ -351,7 +351,7 @@
 
         renderLines();
 
-        async function save(print) {
+        async function save() {
           if (!state.partyId) { MMB.toast(isSale ? t('stock.customerRequired') : t('stock.supplierRequired'), 'error'); return; }
           const lines = state.lines.map(function (l) {
             const p = MMB.product(l.productId);
@@ -388,12 +388,9 @@
           if (!res.ok) { MMB.toast(t('common.error'), 'error'); return; }
           MMB.toast(isSale ? t('stock.saleSaved') : t('stock.purchaseSaved'));
           closeForm();
-          if (print && isSale && res.sale) setTimeout(function () { MMB.printSale(res.sale); }, 260);
         }
 
-        el.querySelector('#billSave').addEventListener('click', function () { save(false); });
-        const sp = el.querySelector('#billSavePrint');
-        if (sp) sp.addEventListener('click', function () { save(true); });
+        el.querySelector('#billSave').addEventListener('click', function () { save(); });
     }
   }
 
@@ -452,11 +449,9 @@
       subtitle: '#' + sale.billNo,
       body: body,
       footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button>' +
-        '<button class="btn btn-soft" id="sdPdf">' + MMB.icon('file') + t('stock.pdf') + '</button>' +
-        '<button class="btn btn-primary" id="sdPrint">' + MMB.icon('print') + t('common.print') + '</button>',
+        '<button class="btn btn-soft" id="sdPdf">' + MMB.icon('file') + t('stock.pdf') + '</button>',
       onMount: function (el, api) {
         el.querySelector('#sdPdf').addEventListener('click', function () { MMB.shareSalePDF(sale); });
-        el.querySelector('#sdPrint').addEventListener('click', function () { MMB.printSale(sale); });
         el.querySelector('#sdView').addEventListener('click', function () { MMB.openBillPreview(sale); });
         const retBtn = el.querySelector('#sdReturn');
         if (retBtn && !fullyReturned) retBtn.addEventListener('click', function () { api.close(); setTimeout(function () { openSaleReturn(sale); }, 140); });
@@ -888,24 +883,30 @@
 
         if (tab === 'in') {
           const rets = MMB.db.returns.filter(function (r) { return r.type === 'purchase'; }).sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
-          const items = purchases.map(function (p) {
-            return { kind: 'purchase', date: p.date, time: p.time, obj: p };
-          }).concat(rets.map(function (r) {
-            return { kind: 'return', date: r.date, time: r.time, obj: r };
-          })).sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
+          // One card per purchased product line. Lines from different purchases
+          // are never merged, even when the product is the same.
+          const items = [];
+          purchases.forEach(function (p) {
+            (p.lines || []).forEach(function (l) {
+              items.push({ kind: 'line', date: p.date, time: p.time, obj: p, line: l });
+            });
+          });
+          rets.forEach(function (r) {
+            items.push({ kind: 'return', date: r.date, time: r.time, obj: r });
+          });
+          items.sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
 
           const filtered = items.filter(function (it) {
-            if (it.kind === 'purchase') {
+            if (it.kind === 'line') {
               const p = it.obj;
-              const hay = [p.no, MMB.accountName(p.supplierId)].concat(p.lines.map(function (l) { return l.name; })).join(' ');
-              return match(hay);
+              return match([p.no, MMB.accountName(p.supplierId), it.line.name].join(' '));
             }
             const r = it.obj;
             const hay = [r.no, MMB.accountName(r.supplierId)].concat((r.lines || []).map(function (l) { return l.name; })).join(' ');
             return match(hay);
           });
 
-          if (!items.length) {
+          if (!purchases.length && !rets.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('package', t('stock.emptyIn'), t('stock.emptyInHint'),
               '<button class="btn btn-primary" data-new="purchase">' + MMB.icon('plus') + t('stock.newPurchase') + '</button>') + '</div>';
           } else if (!filtered.length) {
@@ -921,12 +922,14 @@
                   '<div class="row-end"><div class="row-amount positive">−' + MMB.money(r.total) + '</div><div class="row-note">' + t('common.total') + '</div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
               }
               const p = it.obj;
+              const l = it.line;
               const rets2 = MMB.purchaseReturns(p.id);
+              const lineAmount = l.amount != null ? l.amount : MMB.num(l.qtyKg) * MMB.num(l.rate);
               return '<button class="list-row" data-purchase="' + p.id + '">' +
                 '<div class="avatar gold" style="border-radius:12px">' + MMB.icon('package') + '</div>' +
-                '<div class="row-main"><div class="row-title">' + MMB.esc(p.no) + (rets2.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
-                '<div class="row-sub">' + MMB.esc(MMB.accountName(p.supplierId)) + '<span class="sep"></span>' + MMB.fmtDate(p.date) + '<span class="sep"></span>' + p.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + '</div></div>' +
-                '<div class="row-end"><div class="row-amount">' + MMB.money(p.total) + '</div><div class="row-note">' + t('stock.in') + '</div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
+                '<div class="row-main"><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-gold">' + MMB.esc(p.no) + '</span>' + (rets2.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
+                '<div class="row-sub">' + MMB.esc(MMB.accountName(p.supplierId)) + '<span class="sep"></span>' + MMB.fmtDate(p.date) + (p.time ? '<span class="sep"></span>' + MMB.fmtTime(p.time) : '') + '</div></div>' +
+                '<div class="row-end"><div class="row-amount">' + MMB.money(lineAmount) + '</div><div class="row-note"><span class="num">' + MMB.qty(l.qtyKg, 'kg') + ' · ' + t('stock.buyRate') + ' ' + MMB.money(l.rate, { bare: true }) + '</span></div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
             }).join('') + '</div></div>';
           }
 
@@ -957,19 +960,27 @@
           const nb = listEl.querySelector('[data-new]');
           if (nb) nb.addEventListener('click', function () { MMB.openPurchaseForm(); });
         } else {
-          const outItems = sales.map(function (s) { return { kind: 'sale', date: s.date, time: s.time, obj: s }; })
-            .concat(saleReturnsList.map(function (r) { return { kind: 'saleReturn', date: r.date, time: r.time, obj: r }; }))
-            .sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
+          // One card per sold product line, with sell rate and live PnL.
+          const outItems = [];
+          sales.forEach(function (s) {
+            (s.lines || []).forEach(function (l, i) {
+              outItems.push({ kind: 'saleLine', date: s.date, time: s.time, obj: s, line: l, lineIndex: i });
+            });
+          });
+          saleReturnsList.forEach(function (r) {
+            outItems.push({ kind: 'saleReturn', date: r.date, time: r.time, obj: r });
+          });
+          outItems.sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
+
           const filtered = outItems.filter(function (it) {
-            if (!q) return true;
-            if (it.kind === 'sale') {
+            if (it.kind === 'saleLine') {
               const s = it.obj;
-              return [s.billNo, MMB.accountName(s.customerId), s.brokerId ? MMB.accountName(s.brokerId) : ''].concat(s.lines.map(function (l) { return l.name; })).join(' ').toLowerCase().indexOf(q) !== -1;
+              return [s.billNo, MMB.accountName(s.customerId), s.brokerId ? MMB.accountName(s.brokerId) : '', it.line.name].join(' ').toLowerCase().indexOf(q) !== -1;
             }
             const r = it.obj;
             return [r.no, MMB.accountName(r.customerId)].concat((r.lines || []).map(function (l) { return l.name; })).join(' ').toLowerCase().indexOf(q) !== -1;
           });
-          if (!outItems.length) {
+          if (!sales.length && !saleReturnsList.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('receipt', t('stock.emptyOut'), t('stock.emptyOutHint'),
               '<button class="btn btn-primary" data-new="sale">' + MMB.icon('plus') + t('stock.newSale') + '</button>') + '</div>';
           } else if (!filtered.length) {
@@ -985,12 +996,32 @@
                   '<div class="row-end"><div class="row-amount negative">−' + MMB.money(r.total) + '</div><div class="row-note">' + t('stock.saleReturn') + '</div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
               }
               const s = it.obj;
+              const l = it.line;
               const srets = MMB.saleReturns(s.id);
+              let retAmount = 0, retCogs = 0;
+              MMB.db.returns.forEach(function (r) {
+                if (r.type !== 'sale' || r.saleId !== s.id) return;
+                (r.lines || []).forEach(function (rl) {
+                  if (rl.lineIndex !== it.lineIndex) return;
+                  retAmount += MMB.num(rl.amount);
+                  retCogs += MMB.num(rl.cogs);
+                });
+              });
+              const lineCogs = (sd.saleCogs[s.id] && sd.saleCogs[s.id][it.lineIndex]) || 0;
+              const commRate = MMB.num(s.commissionRate) || MMB.num(MMB.db.settings.commissionRate) || 0;
+              const netRevenue = MMB.round(MMB.num(l.amount) - retAmount, 2);
+              const netCogs = MMB.round(lineCogs - retCogs, 2);
+              const netComm = s.brokerId ? MMB.round(netRevenue * commRate / 100, 2) : 0;
+              const pnl = MMB.round(netRevenue - netCogs - netComm, 2);
+              const pnlText = (pnl > 0 ? '+' : pnl < 0 ? '−' : '') + MMB.money(Math.abs(pnl));
+              const pnlCls = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
               return '<button class="list-row" data-sale="' + s.id + '">' +
                 '<div class="avatar" style="border-radius:12px">' + MMB.icon('receipt') + '</div>' +
-                '<div class="row-main"><div class="row-title">#' + MMB.esc(s.billNo) + ' <span class="badge badge-green">' + t('stock.sale') + '</span>' + (srets.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
-                '<div class="row-sub">' + MMB.esc(MMB.accountName(s.customerId)) + (s.brokerId ? ' · ' + MMB.esc(MMB.accountName(s.brokerId)) : '') + '<span class="sep"></span>' + MMB.fmtDate(s.date) + '<span class="sep"></span>' + s.lines.map(function (l) { return l.name; }).join(', ') + '</div></div>' +
-                '<div class="row-end"><div class="row-amount">' + MMB.money(s.total) + '</div><div class="row-note">' + t('dashboard.commission') + ' ' + MMB.money(s.commission) + '</div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
+                '<div class="row-main"><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-green">#' + MMB.esc(s.billNo) + '</span>' + (srets.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
+                '<div class="row-sub">' + MMB.esc(MMB.accountName(s.customerId)) + (s.brokerId ? ' · ' + MMB.esc(MMB.accountName(s.brokerId)) : '') + '<span class="sep"></span>' + MMB.fmtDate(s.date) + (s.time ? '<span class="sep"></span>' + MMB.fmtTime(s.time) : '') + '</div></div>' +
+                '<div class="row-end"><div class="row-amount">' + MMB.money(l.amount) + '</div>' +
+                '<div class="row-note"><span class="num">' + MMB.qty(l.qtyKg, 'kg') + ' · ' + t('stock.sellRate') + ' ' + MMB.money(l.rate, { bare: true }) + '</span></div>' +
+                '<div class="row-pnl ' + pnlCls + '">' + t('stock.pnl') + ' <span class="num">' + pnlText + '</span></div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
             }).join('') + '</div></div>';
           }
           listEl.querySelectorAll('[data-sale]').forEach(function (b) { b.addEventListener('click', function () { openSaleDetails(b.getAttribute('data-sale')); }); });
