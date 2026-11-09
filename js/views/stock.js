@@ -106,6 +106,9 @@
 
       (isSale ? '<div class="section-head" style="margin:18px 0 9px"><div class="section-title">' + t('stock.charges') + '</div><span class="micro">' + t('common.optional') + '</span></div>' +
         '<div class="charges-grid">' + CHARGE_KEYS.map(function (k) {
+          if (k === 'dalali') {
+            return '<div class="field"><label class="label">' + t('stock.dalali') + '</label><input class="input num" id="billBrokerage" type="number" readonly tabindex="-1" placeholder="0" value=""></div>';
+          }
           return '<div class="field"><label class="label">' + t('stock.' + k) + '</label><input class="input num" type="number" inputmode="decimal" step="0.01" min="0" data-charge="' + k + '" placeholder="0" value="' + (state.charges[k] ? state.charges[k] : '') + '"></div>';
         }).join('') + '</div>' : '') +
 
@@ -198,10 +201,14 @@
 
         function updateTotals() {
           const goods = MMB.round(state.lines.reduce(function (s, l) { return s + lineAmount(l); }, 0), 2);
-          const chargesTotal = MMB.round(CHARGE_KEYS.reduce(function (s, k) { return s + MMB.num(state.charges[k]); }, 0), 2);
+          const chargesTotal = MMB.round(CHARGE_KEYS.reduce(function (s, k) {
+            return k === 'dalali' ? s : s + MMB.num(state.charges[k]);
+          }, 0), 2);
           const total = MMB.round(goods + chargesTotal, 2);
           const ratePct = MMB.db.settings.commissionRate;
           const commission = isSale && state.brokerId ? MMB.round(goods * ratePct / 100, 2) : 0;
+          const brokerageEl = el.querySelector('#billBrokerage');
+          if (brokerageEl) brokerageEl.value = commission ? commission : '';
 
           let html = '<div class="total-row"><span>' + t('stock.goodsTotal') + '</span><span class="v num">' + MMB.money(goods) + '</span></div>';
           if (isSale) {
@@ -917,8 +924,8 @@
                 const r = it.obj;
                 return '<button class="list-row" data-return="' + r.id + '">' +
                   '<div class="avatar blue" style="border-radius:12px">' + MMB.icon('refresh') + '</div>' +
-                  '<div class="row-main"><div class="row-title">' + t('stock.return') + ' · ' + MMB.esc(r.no) + ' <span class="badge badge-blue">' + t('stock.returnBadge') + '</span></div>' +
-                  '<div class="row-sub">' + MMB.esc(MMB.accountName(r.supplierId)) + '<span class="sep"></span>' + MMB.fmtDate(r.date) + '<span class="sep"></span>' + r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + '</div></div>' +
+                  '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(r.date, r.time)) + '</div><div class="row-title">' + t('stock.return') + ' · ' + MMB.esc(r.no) + ' <span class="badge badge-blue">' + t('stock.returnBadge') + '</span></div>' +
+                  '<div class="row-sub">' + MMB.esc(MMB.accountName(r.supplierId)) + '<span class="sep"></span>' + r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + '</div></div>' +
                   '<div class="row-end"><div class="row-amount positive">−' + MMB.money(r.total) + '</div><div class="row-note">' + t('common.total') + '</div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
               }
               const p = it.obj;
@@ -927,8 +934,8 @@
               const lineAmount = l.amount != null ? l.amount : MMB.num(l.qtyKg) * MMB.num(l.rate);
               return '<button class="list-row" data-purchase="' + p.id + '">' +
                 '<div class="avatar gold" style="border-radius:12px">' + MMB.icon('package') + '</div>' +
-                '<div class="row-main"><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-gold">' + MMB.esc(p.no) + '</span>' + (rets2.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
-                '<div class="row-sub">' + MMB.esc(MMB.accountName(p.supplierId)) + '<span class="sep"></span>' + MMB.fmtDate(p.date) + (p.time ? '<span class="sep"></span>' + MMB.fmtTime(p.time) : '') + '</div></div>' +
+                '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(p.date, p.time)) + '</div><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-gold">' + MMB.esc(p.no) + '</span>' + (rets2.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
+                '<div class="row-sub">' + MMB.esc(MMB.accountName(p.supplierId)) + '</div></div>' +
                 '<div class="row-end"><div class="row-amount">' + MMB.money(lineAmount) + '</div><div class="row-note"><span class="num">' + MMB.qty(l.qtyKg, 'kg') + ' · ' + t('stock.buyRate') + ' ' + MMB.money(l.rate, { bare: true }) + '</span></div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
             }).join('') + '</div></div>';
           }
@@ -991,8 +998,8 @@
                 const r = it.obj;
                 return '<button class="list-row" data-salereturn="' + r.id + '">' +
                   '<div class="avatar blue" style="border-radius:12px">' + MMB.icon('refresh') + '</div>' +
-                  '<div class="row-main"><div class="row-title">' + t('stock.saleReturn') + ' · #' + MMB.esc(r.no) + ' <span class="badge badge-blue">' + t('stock.returnBadge') + '</span></div>' +
-                  '<div class="row-sub">' + MMB.esc(MMB.accountName(r.customerId)) + '<span class="sep"></span>' + MMB.fmtDate(r.date) + '<span class="sep"></span>' + r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + '</div></div>' +
+                  '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(r.date, r.time)) + '</div><div class="row-title">' + t('stock.saleReturn') + ' · #' + MMB.esc(r.no) + ' <span class="badge badge-blue">' + t('stock.returnBadge') + '</span></div>' +
+                  '<div class="row-sub">' + MMB.esc(MMB.accountName(r.customerId)) + '<span class="sep"></span>' + r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + '</div></div>' +
                   '<div class="row-end"><div class="row-amount negative">−' + MMB.money(r.total) + '</div><div class="row-note">' + t('stock.saleReturn') + '</div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
               }
               const s = it.obj;
@@ -1017,8 +1024,8 @@
               const pnlCls = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
               return '<button class="list-row" data-sale="' + s.id + '">' +
                 '<div class="avatar" style="border-radius:12px">' + MMB.icon('receipt') + '</div>' +
-                '<div class="row-main"><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-green">#' + MMB.esc(s.billNo) + '</span>' + (srets.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
-                '<div class="row-sub">' + MMB.esc(MMB.accountName(s.customerId)) + (s.brokerId ? ' · ' + MMB.esc(MMB.accountName(s.brokerId)) : '') + '<span class="sep"></span>' + MMB.fmtDate(s.date) + (s.time ? '<span class="sep"></span>' + MMB.fmtTime(s.time) : '') + '</div></div>' +
+                '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(s.date, s.time)) + '</div><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-green">#' + MMB.esc(s.billNo) + '</span>' + (srets.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
+                '<div class="row-sub">' + MMB.esc(MMB.accountName(s.customerId)) + (s.brokerId ? ' · ' + MMB.esc(MMB.accountName(s.brokerId)) : '') + '</div></div>' +
                 '<div class="row-end"><div class="row-amount">' + MMB.money(l.amount) + '</div>' +
                 '<div class="row-note"><span class="num">' + MMB.qty(l.qtyKg, 'kg') + ' · ' + t('stock.sellRate') + ' ' + MMB.money(l.rate, { bare: true }) + '</span></div>' +
                 '<div class="row-pnl ' + pnlCls + '">' + t('stock.pnl') + ' <span class="num">' + pnlText + '</span></div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';

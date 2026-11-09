@@ -564,7 +564,9 @@
     const goodsTotal = MMB.round(lines.reduce(function (s, l) { return s + l.amount; }, 0), 2);
     const charges = {};
     ['bardana', 'dalali', 'nikhara', 'chhappai', 'pehri', 'tulai', 'other'].forEach(function (k) {
-      charges[k] = MMB.round(Math.max(0, MMB.num(data.charges && data.charges[k])), 2);
+      // Brokerage belongs to the broker, is paid by the shop, and is never
+      // charged to the customer's bill.
+      charges[k] = k === 'dalali' ? 0 : MMB.round(Math.max(0, MMB.num(data.charges && data.charges[k])), 2);
     });
     const chargesTotal = MMB.round(Object.keys(charges).reduce(function (s, k) { return s + charges[k]; }, 0), 2);
     const total = MMB.round(goodsTotal + chargesTotal, 2);
