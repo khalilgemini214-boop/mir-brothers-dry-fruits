@@ -373,9 +373,18 @@
 
           if (isSale) {
             const sd = MMB.computeStock();
+            // When editing, this sale is already deducted from stock. Add its
+            // original quantities back so the edited quantities are checked
+            // against stock excluding this sale.
+            const ownQty = {};
+            if (edit) {
+              (edit.lines || []).forEach(function (l) {
+                ownQty[l.productId] = (ownQty[l.productId] || 0) + MMB.num(l.qtyKg);
+              });
+            }
             const warns = [];
             lines.forEach(function (l) {
-              const avail = (sd.states[l.productId] || { qty: 0 }).qty;
+              const avail = (sd.states[l.productId] || { qty: 0 }).qty + (ownQty[l.productId] || 0);
               if (l.qtyKg > avail + 0.0001) warns.push(t('stock.insufficient', { qty: MMB.qty(avail), name: l.name }));
             });
             if (warns.length) {
@@ -594,12 +603,14 @@
     });
   }
 
-  function openPurchaseDetails(id) {
+  function openPurchaseDetails(id, lineIndex) {
     const p = MMB.db.purchases.find(function (x) { return x.id === id; });
     if (!p) return;
     const supplier = MMB.account(p.supplierId);
     const returns = MMB.purchaseReturns(p.id);
     const hasReturns = returns.length > 0;
+    const focusedLine = Number.isInteger(lineIndex) && p.lines[lineIndex] ? lineIndex : null;
+    const soldLines = focusedLine != null ? [p.lines[focusedLine]] : p.lines;
     const fullyReturned = p.lines.every(function (l, i) { return MMB.returnedQty(p.id, i) >= l.qtyKg - 0.0001; });
 
     const body =
@@ -627,7 +638,7 @@
       subtitle: p.no,
       body: body,
       footer: '<button class="btn btn-ghost" id="pdReturn" ' + (fullyReturned ? 'disabled' : '') + '>' + MMB.icon('refresh') + t('stock.return') + '</button>' +
-        '<button class="btn btn-primary" id="pdSell">' + MMB.icon('cart') + t('stock.sell') + '</button>',
+        '<button class="btn btn-primary" id="pdSell">' + MMB.icon('cart') + (focusedLine != null ? t('stock.sellProduct') : t('stock.sell')) + '</button>',
       onMount: function (el, api) {
         el.querySelector('#pdEdit').addEventListener('click', function () { api.close(); setTimeout(function () { MMB.openPurchaseForm(p); }, 140); });
         el.querySelector('#pdDelete').addEventListener('click', async function () {
@@ -657,7 +668,7 @@
             };
           });
         }
-        el.querySelector('#pdSell').addEventListener('click', function () { sellLines(saleLinesFrom(p.lines)); });
+        el.querySelector('#pdSell').addEventListener('click', function () { sellLines(saleLinesFrom(soldLines)); });
         el.querySelectorAll('[data-sell-line]').forEach(function (b) {
           b.addEventListener('click', function () {
             const line = p.lines[Number(b.getAttribute('data-sell-line'))];
@@ -863,10 +874,20 @@
       const purchases = MMB.db.purchases.slice().sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
       const purchaseReturns = MMB.db.returns.filter(function (r) { return r.type === 'purchase'; });
       const saleReturnsList = MMB.db.returns.filter(function (r) { return r.type === 'sale'; });
+      // Stock In cards are hidden once a product's stock reaches zero; they
+      // come back automatically when a sale is edited, deleted or returned.
+      const hasStock = function (productId) {
+        const st = sd.states[productId];
+        return !!(st && st.qty > 0.0001);
+      };
+      let inCardCount = purchaseReturns.length;
+      purchases.forEach(function (p) {
+        (p.lines || []).forEach(function (l) { if (hasStock(l.productId)) inCardCount++; });
+      });
 
       root.innerHTML =
         '<div class="stock-tabs">' +
-        '<a class="stock-tab ' + (tab === 'in' ? 'active' : '') + '" href="#/stock/in">' + MMB.icon('package') + t('stock.in') + '<span class="badge ' + (tab === 'in' ? 'badge-gold' : 'badge-gray') + '">' + (purchases.length + purchaseReturns.length) + '</span></a>' +
+        '<a class="stock-tab ' + (tab === 'in' ? 'active' : '') + '" href="#/stock/in">' + MMB.icon('package') + t('stock.in') + '<span class="badge ' + (tab === 'in' ? 'badge-gold' : 'badge-gray') + '">' + inCardCount + '</span></a>' +
         '<a class="stock-tab out ' + (tab === 'out' ? 'active' : '') + '" href="#/stock/out">' + MMB.icon('receipt') + t('stock.out') + '<span class="badge ' + (tab === 'out' ? 'badge-gold' : 'badge-gray') + '">' + (sales.length + saleReturnsList.length) + '</span></a>' +
         '</div>' +
 
@@ -894,8 +915,9 @@
           // are never merged, even when the product is the same.
           const items = [];
           purchases.forEach(function (p) {
-            (p.lines || []).forEach(function (l) {
-              items.push({ kind: 'line', date: p.date, time: p.time, obj: p, line: l });
+            (p.lines || []).forEach(function (l, i) {
+              if (!hasStock(l.productId)) return;
+              items.push({ kind: 'line', date: p.date, time: p.time, obj: p, line: l, lineIndex: i });
             });
           });
           rets.forEach(function (r) {
@@ -916,6 +938,9 @@
           if (!purchases.length && !rets.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('package', t('stock.emptyIn'), t('stock.emptyInHint'),
               '<button class="btn btn-primary" data-new="purchase">' + MMB.icon('plus') + t('stock.newPurchase') + '</button>') + '</div>';
+          } else if (!items.length) {
+            listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('package', t('stock.noStockOnHand'), t('stock.noStockHint'),
+              '<button class="btn btn-primary" data-new="purchase">' + MMB.icon('plus') + t('stock.newPurchase') + '</button>') + '</div>';
           } else if (!filtered.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('search', t('accounts.noResults'), '') + '</div>';
           } else {
@@ -932,7 +957,7 @@
               const l = it.line;
               const rets2 = MMB.purchaseReturns(p.id);
               const lineAmount = l.amount != null ? l.amount : MMB.num(l.qtyKg) * MMB.num(l.rate);
-              return '<button class="list-row" data-purchase="' + p.id + '">' +
+              return '<button class="list-row" data-purchase="' + p.id + '" data-line="' + it.lineIndex + '">' +
                 '<div class="avatar gold" style="border-radius:12px">' + MMB.icon('package') + '</div>' +
                 '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(p.date, p.time)) + '</div><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-gold">' + MMB.esc(p.no) + '</span>' + (rets2.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
                 '<div class="row-sub">' + MMB.esc(MMB.accountName(p.supplierId)) + '</div></div>' +
@@ -940,7 +965,7 @@
             }).join('') + '</div></div>';
           }
 
-          listEl.querySelectorAll('[data-purchase]').forEach(function (b) { b.addEventListener('click', function () { openPurchaseDetails(b.getAttribute('data-purchase')); }); });
+          listEl.querySelectorAll('[data-purchase]').forEach(function (b) { b.addEventListener('click', function () { openPurchaseDetails(b.getAttribute('data-purchase'), Number(b.getAttribute('data-line'))); }); });
           listEl.querySelectorAll('[data-return]').forEach(function (b) {
             b.addEventListener('click', function () {
               const r = MMB.db.returns.find(function (x) { return x.id === b.getAttribute('data-return'); });
