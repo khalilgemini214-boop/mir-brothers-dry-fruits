@@ -140,6 +140,11 @@
     return MMB.fmtDate(entry.date) + ' · ' + MMB.fmtTime(entry.time);
   }
 
+  function entryPairLabel(entry) {
+    const pair = MMB.entryPair(entry);
+    return pair ? t('ledger.pairedWith', { name: MMB.accountName(pair.accountId) }) : '';
+  }
+
   function entrySub(account, entry) {
     let parts = [];
     if (entry.refType === 'sale') {
@@ -149,8 +154,6 @@
       const r = MMB.db.returns.find(function (x) { return x.id === entry.refId; });
       if (r) parts.push(r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', '));
     }
-    const pair = MMB.entryPair(entry);
-    if (pair) parts.push(t('ledger.pairedWith', { name: MMB.accountName(pair.accountId) }));
     return parts.filter(Boolean).join(' · ');
   }
 
@@ -432,13 +435,15 @@
     } else {
       listEl.innerHTML = entries.map(function (e) {
         const sub = entrySub(account, e);
+        const pairLabel = entryPairLabel(e);
         const rb = runningById[e.id] || 0;
         const rbTone = rb > 0 ? 'positive' : rb < 0 ? 'negative' : 'zero';
         return '<div class="ledger-item" data-entry="' + e.id + '">' +
           entryIcon(account, e) +
           '<div class="entry-main"><div class="entry-when">' + MMB.esc(entryWhen(e)) + '</div>' +
           '<div class="entry-title">' + MMB.esc(MMB.entryTitle(e)) + '</div>' +
-          (sub ? '<div class="entry-meta">' + MMB.esc(sub) + '</div>' : '') + '</div>' +
+          (sub ? '<div class="entry-meta">' + MMB.esc(sub) + '</div>' : '') +
+          (pairLabel ? '<div class="entry-link">' + MMB.icon('users') + '<span>' + MMB.esc(pairLabel) + '</span></div>' : '') + '</div>' +
           '<div class="row-end"><div class="entry-amount">' + entryAmountHTML(account, e) + '</div>' +
           '<div class="row-note ' + rbTone + '">' + t('ledger.balShort') + ' <span class="num">' + MMB.money(rb) + '</span></div></div>' +
           '<button class="icon-btn sm" data-menu="' + e.id + '" aria-label="' + MMB.esc(t('common.more')) + '">' + MMB.icon('more') + '</button>' +
@@ -447,7 +452,7 @@
     }
 
     root.querySelector('#ledgerBack').addEventListener('click', function () { MMB.navigate('accounts'); });
-    root.querySelector('#ledgerPdf').addEventListener('click', function () { MMB.downloadLedgerPDF(account); });
+    root.querySelector('#ledgerPdf').addEventListener('click', function () { MMB.shareLedgerPDF(account); });
     root.querySelector('#ledgerEdit').addEventListener('click', function () {
       MMB.openAccountForm({ account: account, onSaved: function () { MMB.rerender(); }, onDeleted: function () { MMB.navigate('accounts'); } });
     });
@@ -501,7 +506,7 @@
       const amt = MMB.num(e.amount);
       running = MMB.round(running + amt * MMB.entrySign(account, e.type), 2);
       if (e.type === 'credit') creditTotal += amt; else debitTotal += amt;
-      const sub = entrySub(account, e);
+      const sub = [entrySub(account, e), entryPairLabel(e)].filter(Boolean).join(' · ');
       const isCredit = e.type === 'credit';
       const tone = running > 0 ? 'pos' : running < 0 ? 'neg' : '';
       return '<tr>' +

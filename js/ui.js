@@ -502,6 +502,7 @@
       '<div class="bill-urdu">' + tu('bills.urduThanks') + '</div></div>' +
       '<div class="bill-sign">' + te('bills.signature') + '<div class="bill-urdu">' + tu('bills.urduSignature') + '</div></div></div>' +
       '<div class="bill-note">' + te('bills.thankYou') + ' · ' + MMB.esc(shop.nameEn) + '</div>' +
+      '<div class="bill-credit">Software by Paiwand Softwares - 0331-8625942</div>' +
       '</div>';
   };
 
@@ -528,6 +529,29 @@
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+
+  /* Share a PDF with the native share sheet (so it can go to WhatsApp), or
+     fall back to a browser download. */
+  async function sharePdfBlob(blob, name) {
+    const fs = nativePlugin('Filesystem');
+    const share = nativePlugin('Share');
+    if (fs && fs.writeFile && share && share.share) {
+      const data = await blobToBase64(blob);
+      const written = await fs.writeFile({ path: name, data: data, directory: 'CACHE', recursive: true });
+      await share.share({ title: name, dialogTitle: t('stock.pdfSharePdf'), files: [written.uri] });
+      return true;
+    }
+    if (navigator.canShare && typeof File === 'function') {
+      const file = new File([blob], name, { type: 'application/pdf' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: name });
+        return true;
+      }
+    }
+    saveBlob(blob, name);
+    MMB.toast(t('stock.pdfSaved'));
+    return false;
   }
 
   function saveBlob(blob, name) {
@@ -754,13 +778,13 @@
     }
   }
 
-  MMB.downloadLedgerPDF = async function (account) {
+  MMB.shareLedgerPDF = async function (account) {
     try {
       MMB.toast(t('stock.pdfWorking'), 'gold');
       const blob = await docBlobFromHTML(MMB.ledgerStatementHTML(account));
-      saveBlob(blob, ledgerPDFName(account));
-      MMB.toast(t('stock.pdfSaved'));
+      await sharePdfBlob(blob, ledgerPDFName(account));
     } catch (e) {
+      if (e && e.name === 'AbortError') return;
       console.warn('Ledger PDF failed', e);
       MMB.toast(t('stock.pdfFailed'), 'error');
     }
@@ -782,24 +806,7 @@
     try {
       MMB.toast(t('stock.pdfWorking'), 'gold');
       const blob = await MMB.billPDF(sale);
-      const name = pdfFileName(sale);
-      const fs = nativePlugin('Filesystem');
-      const share = nativePlugin('Share');
-      if (fs && fs.writeFile && share && share.share) {
-        const data = await blobToBase64(blob);
-        const written = await fs.writeFile({ path: name, data: data, directory: 'CACHE', recursive: true });
-        await share.share({ title: name, dialogTitle: t('stock.pdfShare'), files: [written.uri] });
-        return;
-      }
-      if (navigator.canShare && typeof File === 'function') {
-        const file = new File([blob], name, { type: 'application/pdf' });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: name });
-          return;
-        }
-      }
-      saveBlob(blob, name);
-      MMB.toast(t('stock.pdfSaved'));
+      await sharePdfBlob(blob, pdfFileName(sale));
     } catch (e) {
       if (e && e.name === 'AbortError') return;
       console.warn('PDF share failed', e);
