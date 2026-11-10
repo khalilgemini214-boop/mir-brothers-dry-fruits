@@ -355,6 +355,7 @@
   async function doFetch() {
     if (!MMB.sync || MMB.sync.busy()) return;
     if (!navigator.onLine) { MMB.toast(t('sync.offline'), 'error'); return; }
+    const startedAt = Date.now();
     const res = await MMB.sync.fetch();
     if (!res || !res.ok) {
       if (res && res.error === 'busy') return;
@@ -365,8 +366,14 @@
     if (res.discarded) MMB.toast(t('sync.deletedLocal', { n: res.discarded }), 'error');
     else if (res.fetched) MMB.toast(t('sync.fetched', { n: res.fetched }), 'gold');
     else MMB.toast(t('sync.upToDate'), 'gold');
-    // Let the toast paint, then repaint the screen with the new data.
-    requestAnimationFrame(function () { setTimeout(safeRerender, 0); });
+
+    // Keep the button spinning until the screen shows the fetched data. A
+    // small minimum makes a very fast fetch visible instead of a blink.
+    const wait = Math.max(0, 550 - (Date.now() - startedAt));
+    setTimeout(function () {
+      try { safeRerender(); }
+      finally { if (MMB.sync.finish) MMB.sync.finish(); }
+    }, wait);
   }
 
   /* ── auth gate ────────────────────────────────────────────── */

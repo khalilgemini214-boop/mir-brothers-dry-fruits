@@ -350,8 +350,14 @@
         const r = await MMB.sync.fetch();
         if (r && r.ok) {
           MMB.toast(t('sync.fetched', { n: r.fetched || 0 }), 'gold');
-          if (MMB.safeRerender) MMB.safeRerender();
-          else MMB.rerender();
+          setTimeout(function () {
+            try {
+              if (MMB.safeRerender) MMB.safeRerender();
+              else MMB.rerender();
+            } finally {
+              if (MMB.sync.finish) MMB.sync.finish();
+            }
+          }, 0);
         } else {
           MMB.toast(t('sync.failed'), 'error');
         }

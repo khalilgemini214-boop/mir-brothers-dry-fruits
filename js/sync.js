@@ -342,8 +342,8 @@
         MMB.db.sync.logoBase = MMB.recordHash({ logo: MMB.db.settings.shop.logo || '' });
       }
       MMB.save({ origin: 'remote' });
-      setBusy(null);
-      if (MMB.onSyncState) MMB.onSyncState(null);
+      // The caller keeps the spinner on while it repaints, then calls
+      // MMB.sync.finish(). Errors clear the busy state above.
       return { ok: true, fetched: changes, discarded: discarded, keys: changedKeys };
     } catch (e) {
       console.error('Fetch failed', e);
@@ -357,6 +357,9 @@
     push: push,
     fetch: fetchAll,
     busy: function () { return busy; },
+    // fetch() keeps the busy flag on success so the header button can spin
+    // until the caller has repainted. Call this after the repaint.
+    finish: function () { setBusy(null); },
     cursorDate: function () {
       const o = MMB.db.sync.lastFetchedServerAt;
       if (!o || typeof o.seconds !== 'number') return null;

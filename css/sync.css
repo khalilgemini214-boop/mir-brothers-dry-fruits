@@ -10,6 +10,21 @@
 
 .cloud-btn { position: relative; }
 .cloud-label { display: none; }
+
+.cloud-spin {
+  display: none;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  place-items: center;
+}
+.cloud-spin .ic { width: 18px; height: 18px; }
+.cloud-btn.spinning > .ic { display: none; }
+.cloud-btn.spinning .cloud-spin {
+  display: grid;
+  animation: syncSpin .7s linear infinite;
+}
+.cloud-btn.spinning { color: var(--gold); }
 .cloud-btn .ic { transition: color .18s; }
 .cloud-btn.has-pending { color: var(--gold); }
 .cloud-btn.spinning .ic { animation: syncSpin .8s linear infinite; }
