@@ -752,8 +752,8 @@
 
   /* ── adjustment ───────────────────────────────────────────── */
   MMB.openAdjustmentForm = function () {
-    if (!MMB.db.products.length) { MMB.toast(t('stock.addProductFirst'), 'error'); MMB.openProductForm({ onSaved: function () { MMB.openAdjustmentForm(); } }); return; }
-    const opts = MMB.db.products.map(function (p) {
+    if (!MMB.searchProducts('').length) { MMB.toast(t('stock.addProductFirst'), 'error'); MMB.openProductForm({ onSaved: function () { MMB.openAdjustmentForm(); } }); return; }
+    const opts = MMB.searchProducts('').map(function (p) {
       const st = (MMB.computeStock().states[p.id] || { qty: 0 });
       return '<option value="' + p.id + '">' + MMB.esc(p.name) + ' — ' + MMB.qty(st.qty, 'kg') + '</option>';
     }).join('');
@@ -836,10 +836,10 @@
         function render() {
           const sd = MMB.computeStock();
           const list = el.querySelector('#prodList');
-          if (!MMB.db.products.length) {
+          if (!MMB.searchProducts('').length) {
             list.innerHTML = MMB.emptyHTML('package', t('stock.noProducts'), t('stock.firstPurchase'));
           } else {
-            list.innerHTML = MMB.db.products.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (p) {
+            list.innerHTML = MMB.searchProducts('').sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (p) {
               const st = sd.states[p.id] || { qty: 0, avg: 0, value: 0 };
               return '<button class="party-item" data-edit-product="' + p.id + '">' +
                 '<div class="entry-icon">' + MMB.icon('package') + '</div>' +
@@ -869,9 +869,12 @@
       tab = (params && params.tab) === 'out' ? 'out' : 'in';
       const sd = MMB.computeStock();
       const totals = MMB.stockTotals(sd);
-      const low = MMB.lowStock(sd);
       const sales = MMB.db.sales.slice().sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
       const purchases = MMB.db.purchases.slice().sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
+      const dupBills = {};
+      sales.forEach(function (s) { dupBills[s.billNo] = (dupBills[s.billNo] || 0) + 1; });
+      const dupPurchases = {};
+      purchases.forEach(function (p) { dupPurchases[p.no] = (dupPurchases[p.no] || 0) + 1; });
       const purchaseReturns = MMB.db.returns.filter(function (r) { return r.type === 'purchase'; });
       const saleReturnsList = MMB.db.returns.filter(function (r) { return r.type === 'sale'; });
       // Stock In cards are hidden once a product's stock reaches zero; they
@@ -884,6 +887,26 @@
       purchases.forEach(function (p) {
         (p.lines || []).forEach(function (l) { if (hasStock(l.productId)) inCardCount++; });
       });
+      // Product totals for the "sold X of Y" strip on each Stock In card.
+      const prodStats = {};
+      MMB.db.products.forEach(function (p) { prodStats[p.id] = { bought: 0, sold: 0, left: 0 }; });
+      function bumpStat(id, field, delta) { if (prodStats[id]) prodStats[id][field] += delta; }
+      MMB.db.purchases.forEach(function (p) {
+        (p.lines || []).forEach(function (l) { bumpStat(l.productId, 'bought', MMB.num(l.qtyKg)); });
+      });
+      MMB.db.sales.forEach(function (s) {
+        (s.lines || []).forEach(function (l) { bumpStat(l.productId, 'sold', MMB.num(l.qtyKg)); });
+      });
+      MMB.db.returns.forEach(function (r) {
+        (r.lines || []).forEach(function (l) {
+          if (r.type === 'purchase') bumpStat(l.productId, 'bought', -MMB.num(l.qtyKg));
+          else if (r.type === 'sale') bumpStat(l.productId, 'sold', -MMB.num(l.qtyKg));
+        });
+      });
+      Object.keys(prodStats).forEach(function (id) {
+        const st = sd.states[id];
+        prodStats[id].left = MMB.round(st ? st.qty : 0, 3);
+      });
 
       root.innerHTML =
         '<div class="stock-tabs">' +
@@ -893,7 +916,6 @@
 
         '<div class="stock-summary">' +
         '<span class="pill">' + MMB.icon('scale') + t('stock.stockValue') + ' <strong>' + MMB.money(totals.value) + '</strong></span>' +
-        (low.length ? '<span class="pill" style="color:var(--red)">' + MMB.icon('alert') + low.length + ' ' + t('stock.low') + '</span>' : '') +
         '<div class="stock-tools">' +
         '<button class="icon-btn sm" id="stockProducts" title="' + MMB.esc(t('stock.manageProducts')) + '" aria-label="' + MMB.esc(t('stock.manageProducts')) + '">' + MMB.icon('package') + '</button>' +
         '<button class="icon-btn sm" id="stockAdjust" title="' + MMB.esc(t('stock.adjust')) + '" aria-label="' + MMB.esc(t('stock.adjust')) + '">' + MMB.icon('scale') + '</button>' +
@@ -957,11 +979,18 @@
               const l = it.line;
               const rets2 = MMB.purchaseReturns(p.id);
               const lineAmount = l.amount != null ? l.amount : MMB.num(l.qtyKg) * MMB.num(l.rate);
-              return '<button class="list-row" data-purchase="' + p.id + '" data-line="' + it.lineIndex + '">' +
+              const ps = prodStats[l.productId] || { bought: 0, sold: 0, left: 0 };
+              const lowKg = MMB.num(MMB.db.settings.lowStockKg);
+              return '<button class="list-row stock-line-card" data-purchase="' + p.id + '" data-line="' + it.lineIndex + '">' +
+                '<div class="stock-line-top">' +
                 '<div class="avatar gold" style="border-radius:12px">' + MMB.icon('package') + '</div>' +
-                '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(p.date, p.time)) + '</div><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-gold">' + MMB.esc(p.no) + '</span>' + (rets2.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
+                '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(p.date, p.time)) + '</div><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-gold">' + MMB.esc(p.no) + '</span>' + (dupPurchases[p.no] > 1 ? ' <span class="badge badge-red">' + t('stock.duplicateBill') + '</span>' : '') + (rets2.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
                 '<div class="row-sub">' + MMB.esc(MMB.accountName(p.supplierId)) + '</div></div>' +
-                '<div class="row-end"><div class="row-amount">' + MMB.money(lineAmount) + '</div><div class="row-note"><span class="num">' + MMB.qty(l.qtyKg, 'kg') + ' · ' + t('stock.buyRate') + ' ' + MMB.money(l.rate, { bare: true }) + '</span></div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
+                '<div class="row-end"><div class="row-amount">' + MMB.money(lineAmount) + '</div><div class="row-note"><span class="num">' + MMB.qty(l.qtyKg, 'kg') + ' · ' + t('stock.buyRate') + ' ' + MMB.money(l.rate, { bare: true }) + '</span></div></div>' + MMB.icon('chevron-right', 'row-arrow') +
+                '</div>' +
+                '<div class="stock-line-stats"><span>' + MMB.esc(t('stock.soldOf', { sold: MMB.qty(ps.sold), bought: MMB.qty(ps.bought) })) + '</span>' +
+                '<span class="left' + (ps.left <= lowKg ? ' low' : '') + '">' + MMB.esc(t('stock.leftKg', { qty: MMB.qty(ps.left) })) + '</span></div>' +
+                '</button>';
             }).join('') + '</div></div>';
           }
 
@@ -1049,7 +1078,7 @@
               const pnlCls = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
               return '<button class="list-row" data-sale="' + s.id + '">' +
                 '<div class="avatar" style="border-radius:12px">' + MMB.icon('receipt') + '</div>' +
-                '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(s.date, s.time)) + '</div><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-green">#' + MMB.esc(s.billNo) + '</span>' + (srets.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
+                '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(s.date, s.time)) + '</div><div class="row-title">' + MMB.esc(l.name) + ' <span class="badge badge-green">#' + MMB.esc(s.billNo) + '</span>' + (dupBills[s.billNo] > 1 ? ' <span class="badge badge-red">' + t('stock.duplicateBill') + '</span>' : '') + (srets.length ? ' <span class="badge badge-blue">' + t('stock.linkedReturns') + '</span>' : '') + '</div>' +
                 '<div class="row-sub">' + MMB.esc(MMB.accountName(s.customerId)) + (s.brokerId ? ' · ' + MMB.esc(MMB.accountName(s.brokerId)) : '') + '</div></div>' +
                 '<div class="row-end"><div class="row-amount">' + MMB.money(l.amount) + '</div>' +
                 '<div class="row-note"><span class="num">' + MMB.qty(l.qtyKg, 'kg') + ' · ' + t('stock.sellRate') + ' ' + MMB.money(l.rate, { bare: true }) + '</span></div>' +

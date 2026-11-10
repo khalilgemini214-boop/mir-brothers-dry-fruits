@@ -1,17 +1,25 @@
 /* Mir & Brothers — offline cache */
-const CACHE = 'mmb-dryfruits-v2';
+const CACHE = 'mmb-dryfruits-v4';
 
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/app.css',
+  './css/auth.css',
+  './css/sync.css',
   './js/config.js',
+  './js/cloud-config.js',
   './js/utils.js',
   './js/i18n.js',
   './js/db.js',
   './js/ui.js',
   './js/updater.js',
+  './js/cloud.js',
+  './js/sync.js',
+  './assets/vendor/firebase-app-compat.js',
+  './assets/vendor/firebase-auth-compat.js',
+  './assets/vendor/firebase-firestore-compat.js',
   './js/views/dashboard.js',
   './js/views/accounts.js',
   './js/views/stock.js',

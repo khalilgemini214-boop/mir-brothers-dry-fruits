@@ -12,8 +12,10 @@
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/icon.svg">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/auth.css">
+  <link rel="stylesheet" href="css/sync.css">
 </head>
-<body>
+<body class="auth-pending">
 
 <!-- ── Icon sprite ─────────────────────────────────────────────── -->
 <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -128,6 +130,16 @@
         <p id="pageSub">—</p>
       </div>
       <div class="topbar-actions">
+        <span class="sync-stamp" id="syncStamp" hidden></span>
+        <button class="icon-btn cloud-btn cloud-with-label" id="syncBtn" aria-label="Sync" data-i18n-title="sync.sync">
+          <svg class="ic"><use href="#i-refresh"/></svg>
+          <span class="cloud-label" data-i18n="sync.sync">Sync</span>
+          <span class="sync-badge" id="syncBadge" hidden>0</span>
+        </button>
+        <button class="icon-btn cloud-btn cloud-with-label" id="fetchBtn" aria-label="Fetch" data-i18n-title="sync.fetch">
+          <svg class="ic"><use href="#i-download"/></svg>
+          <span class="cloud-label" data-i18n="sync.fetch">Fetch</span>
+        </button>
         <button class="icon-btn" id="langBtn" aria-label="Language" title="Language">
           <svg class="ic"><use href="#i-globe"/></svg>
         </button>
@@ -157,6 +169,43 @@
 <div id="toastHost" class="toast-host" aria-live="polite"></div>
 <div id="printArea" class="print-area" aria-hidden="true"></div>
 
+<!-- ── Boot / auth gate ────────────────────────────────────────── -->
+<div id="bootGate" class="boot-gate">
+  <svg class="lock-mark"><use href="#i-logo"/></svg>
+  <div class="boot-spinner" aria-hidden="true"></div>
+  <p data-i18n="auth.loading">Checking session…</p>
+</div>
+
+<div id="authScreen" class="auth-screen" hidden>
+  <form class="auth-card" id="authForm" novalidate>
+    <button type="button" class="auth-lang" id="authLang">اردو</button>
+    <svg class="auth-mark"><use href="#i-logo"/></svg>
+    <h2 data-i18n="auth.title">Sign in</h2>
+    <p data-i18n="auth.subtitle">Use the account added by the shop owner.</p>
+
+    <label class="label" for="authEmail" data-i18n="auth.email">Email</label>
+    <input class="input" id="authEmail" type="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" dir="ltr" required>
+
+    <label class="label" for="authPassword" data-i18n="auth.password">Password</label>
+    <div class="auth-pass">
+      <input class="input" id="authPassword" type="password" autocomplete="current-password" dir="ltr" required>
+      <button type="button" class="auth-eye" id="authShow" aria-label="Show password" data-i18n-title="auth.show">
+        <svg class="ic"><use href="#i-eye"/></svg>
+      </button>
+    </div>
+
+    <div class="auth-error" id="authError" role="alert"></div>
+    <button class="btn btn-primary btn-block auth-submit" id="authSubmit" type="submit">
+      <span id="authSubmitLabel" data-i18n="auth.signIn">Sign in</span>
+    </button>
+
+    <div class="auth-foot">
+      <span class="hint" id="authOffline" hidden data-i18n="auth.offline">You are offline.</span>
+    </div>
+    <p class="auth-note" data-i18n="auth.noSignup">Accounts are added by the shop owner. There is no sign-up here.</p>
+  </form>
+</div>
+
 <!-- ── Lock screen ─────────────────────────────────────────────── -->
 <div id="lockScreen" class="lock-screen" hidden>
   <div class="lock-card">
@@ -171,6 +220,10 @@
 </div>
 
 <script src="js/config.js"></script>
+<script src="js/cloud-config.js"></script>
+<script src="assets/vendor/firebase-app-compat.js"></script>
+<script src="assets/vendor/firebase-auth-compat.js"></script>
+<script src="assets/vendor/firebase-firestore-compat.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/db.js"></script>
@@ -178,6 +231,8 @@
 <script src="assets/vendor/jspdf.umd.min.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/updater.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/sync.js"></script>
 <script src="js/views/dashboard.js"></script>
 <script src="js/views/accounts.js"></script>
 <script src="js/views/stock.js"></script>

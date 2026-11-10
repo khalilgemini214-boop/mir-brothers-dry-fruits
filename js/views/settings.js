@@ -92,6 +92,19 @@
       const sd = MMB.computeStock();
       const lastBackup = st.backupLastAt ? MMB.fmtDate(st.backupLastAt.slice(0, 10)) : t('settings.never');
       const bytes = MMB.storageBytes();
+      const pendingCloud = MMB.pendingCount ? MMB.pendingCount() : 0;
+      const lastFetched = (function () {
+        if (!MMB.sync || !MMB.sync.lastFetchedISO) return t('sync.never');
+        const iso = MMB.sync.lastFetchedISO();
+        if (!iso) return t('sync.never');
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return t('sync.never');
+        try {
+          return d.toLocaleString(MMB.lang() === 'ur' ? 'ur-PK' : 'en-GB', {
+            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+          });
+        } catch (e) { return MMB.fmtDate(iso.slice(0, 10)); }
+      })();
 
       root.innerHTML =
         '<div class="page-head"><div><h2 class="page-title">' + t('settings.title') + '</h2><p class="page-sub">' + t('settings.subtitle') + '</p></div></div>' +
@@ -162,6 +175,15 @@
         '<div class="setting-control"><button class="switch ' + (upd.autoCheck !== false ? 'on' : '') + '" id="autoUpdateToggle" aria-label="' + MMB.esc(t('settings.autoCheck')) + '"></button></div></div>' +
         '</div></section>' +
 
+        /* cloud */
+        '<section class="settings-group"><div class="section-head" style="margin-top:0"><div class="section-title">' + t('settings.cloud') + '</div><span class="micro">' + t('settings.cloudHint') + '</span></div>' +
+        '<div class="settings-card">' +
+        '<div class="setting-row"><div class="si blue">' + MMB.icon('globe') + '</div><div class="setting-label"><div class="st">' + MMB.esc((MMB.cloud && MMB.cloud.email()) || '—') + '</div><div class="ss">' + t('settings.signedInEmail') + '</div></div>' +
+        '<div class="setting-control"><button class="btn btn-sm btn-ghost" id="signOutBtn">' + MMB.icon('lock') + t('settings.signOut') + '</button></div></div>' +
+        '<div class="setting-row"><div class="si gold">' + MMB.icon('refresh') + '</div><div class="setting-label"><div class="st">' + t('settings.cloudPending') + ' · ' + pendingCloud + '</div><div class="ss">' + t('sync.lastFetched', { time: lastFetched }) + '</div></div>' +
+        '<div class="setting-control"><button class="btn btn-sm btn-ghost" id="resyncBtn">' + t('settings.resync') + '</button></div></div>' +
+        '</div></section>' +
+
         /* data */
         '<section class="settings-group"><div class="section-head" style="margin-top:0"><div class="section-title">' + t('settings.data') + '</div><span class="micro">' + t('settings.storageUsed') + ': ' + MMB.bytesLabel(bytes) + '</span></div>' +
         '<div class="settings-card">' +
@@ -178,7 +200,7 @@
         '<button class="btn btn-sm btn-ghost" data-csv="returns">' + t('settings.exportReturns') + '</button>' +
         '<button class="btn btn-sm btn-ghost" data-csv="stock">' + t('settings.exportStock') + '</button>' +
         '</div></div>' +
-        '<div class="setting-row"><div class="si">' + MMB.icon('sparkles') + '</div><div class="setting-label"><div class="st">' + t('settings.dataSummary') + '</div><div class="ss">' + MMB.db.accounts.length + ' ' + t('settings.accountsCount') + ' · ' + MMB.db.products.length + ' ' + t('settings.productsCount') + ' · ' + MMB.db.sales.length + ' ' + t('settings.salesCount') + ' · ' + MMB.db.purchases.length + ' ' + t('settings.purchasesCount') + ' · ' + MMB.db.ledger.length + ' ' + t('settings.entriesCount') + '</div></div></div>' +
+        '<div class="setting-row"><div class="si">' + MMB.icon('sparkles') + '</div><div class="setting-label"><div class="st">' + t('settings.dataSummary') + '</div><div class="ss">' + MMB.accounts().length + ' ' + t('settings.accountsCount') + ' · ' + MMB.searchProducts('').length + ' ' + t('settings.productsCount') + ' · ' + MMB.db.sales.length + ' ' + t('settings.salesCount') + ' · ' + MMB.db.purchases.length + ' ' + t('settings.purchasesCount') + ' · ' + MMB.db.ledger.length + ' ' + t('settings.entriesCount') + '</div></div></div>' +
         '<div class="setting-row" style="background:color-mix(in srgb,var(--red-soft) 40%, transparent)"><div class="si red">' + MMB.icon('alert') + '</div><div class="setting-label"><div class="st" style="color:var(--red)">' + t('settings.reset') + '</div><div class="ss">' + t('settings.resetHint') + '</div></div>' +
         '<div class="setting-control"><button class="btn btn-sm btn-danger" id="resetBtn">' + t('common.reset') + '</button></div></div>' +
         '</div></section>' +
@@ -280,6 +302,43 @@
       if (changeBtn) changeBtn.addEventListener('click', function () { openPinModal('change'); });
       const removeBtn = root.querySelector('#pinRemove');
       if (removeBtn) removeBtn.addEventListener('click', function () { openPinModal('remove'); });
+
+      /* cloud */
+      const resyncBtn = root.querySelector('#resyncBtn');
+      if (resyncBtn) resyncBtn.addEventListener('click', async function () {
+        const ok = await MMB.confirm({
+          title: t('settings.resync'),
+          body: t('settings.resyncBody'),
+          confirmText: t('settings.resync')
+        });
+        if (!ok) return;
+        MMB.sync.resetCursor();
+        const r = await MMB.sync.fetch();
+        if (r && r.ok) {
+          MMB.toast(t('sync.fetched', { n: r.fetched || 0 }), 'gold');
+          if (MMB.safeRerender) MMB.safeRerender();
+          else MMB.rerender();
+        } else {
+          MMB.toast(t('sync.failed'), 'error');
+        }
+      });
+
+      const signOutBtn = root.querySelector('#signOutBtn');
+      if (signOutBtn) signOutBtn.addEventListener('click', async function () {
+        const pending = MMB.pendingCount ? MMB.pendingCount() : 0;
+        const body = t('auth.signOutBody') + (pending
+          ? ' ' + t('sync.signOutPending', { n: pending })
+          : '');
+        const ok = await MMB.confirm({
+          title: t('auth.signOutConfirm'),
+          body: body,
+          danger: true,
+          confirmText: t('settings.signOut')
+        });
+        if (!ok) return;
+        try { await MMB.cloud.signOut(); }
+        catch (e) { MMB.toast(t('common.error'), 'error'); }
+      });
 
       /* backup */
       root.querySelector('#backupBtn').addEventListener('click', function () { MMB.downloadBackup(); });

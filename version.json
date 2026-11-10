@@ -1,6 +1,6 @@
 {
-  "version": "1.0.4",
-  "versionCode": 5,
+  "version": "1.1.0",
+  "versionCode": 6,
   "minNativeVersion": "1.0.4",
-  "notes": "Fixes app updates: the web bundle download now sends the checksum the updater requires, so future updates install without a new APK. Also includes the bill PDF Urdu fix and the Brokerage label."
+  "notes": "Firebase sign-in, Sync and Fetch header buttons, server-time fetch cursor, tombstones for deletes, and a cloud section in Settings."
 }

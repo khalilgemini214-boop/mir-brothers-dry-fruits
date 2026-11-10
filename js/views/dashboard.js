@@ -46,7 +46,7 @@
 
   function lowStockHTML(list) {
     if (!list.length) {
-      if (!MMB.db.products.length) {
+      if (!MMB.searchProducts('').length) {
         return '<div class="empty" style="padding:22px 8px"><div class="empty-art" style="width:44px;height:44px;margin-bottom:8px">' + MMB.icon('package') + '</div><h3>' + t('stock.noProducts') + '</h3><p>' + t('stock.firstPurchase') + '</p><button class="btn btn-sm btn-soft mt-12" data-action="stock">' + t('dashboard.viewStock') + '</button></div>';
       }
       return '<div class="empty" style="padding:22px 8px"><div class="empty-art" style="width:44px;height:44px;margin-bottom:8px">' + MMB.icon('check') + '</div><h3>' + t('dashboard.allGood') + '</h3><p>' + t('dashboard.noLowStock') + '</p></div>';

@@ -208,7 +208,7 @@
     const excludeId = opts.excludeId || null;
     let query = '';
     function list() {
-      let arr = MMB.db.accounts.slice();
+      let arr = MMB.accounts();
       if (types) arr = arr.filter(function (a) { return types.indexOf(a.type) !== -1; });
       if (excludeId) arr = arr.filter(function (a) { return a.id !== excludeId; });
       const q = query.trim().toLowerCase();

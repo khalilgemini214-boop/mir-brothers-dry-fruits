@@ -2,13 +2,79 @@
 (function () {
   const MMB = window.MMB;
   const KEY = 'mmb_dryfruits_v1';
+  const SCHEMA = 2;
+  const COLLECTIONS = ['accounts', 'products', 'ledger', 'sales', 'purchases', 'returns', 'adjustments'];
+  const SHARED_SETTINGS = ['shop', 'commissionRate', 'lowStockKg', 'defaultCartonKg'];
+
+  // Existing installs still carry the old shop profile in localStorage.
+  // Upgrade it in place, but only when the fields are untouched defaults.
+  const SHOP_OLD = {
+    addressEn: 'Shop No. 3, Jani Dost Muhammad Chowk, Chamni Bazar Road, Quetta',
+    addressUr: 'دکان نمبر 3، جانی دوست محمد چوک، چمنی بازار روڈ، کوئٹہ',
+    phones: ['081-2839625', '0301-3761005', '0333-7806994']
+  };
+  const SHOP_NEW = {
+    addressEn: 'Shop No.3, Haji Doust Muhammad Market, Chuharmal Road, Quetta.',
+    addressUr: 'دکان نمبر 3، حاجی دوست محمد مارکیٹ، چوہرمل روڈ، کوئٹہ',
+    phones: ['03013761005', '03168296398', '03197812344', '03073817033']
+  };
+
+  function upgradeShopDefaults(out) {
+    const shop = out.settings.shop;
+    let changed = false;
+    if (shop.addressEn === SHOP_OLD.addressEn) { shop.addressEn = SHOP_NEW.addressEn; changed = true; }
+    if (shop.addressUr === SHOP_OLD.addressUr) { shop.addressUr = SHOP_NEW.addressUr; changed = true; }
+    if (Array.isArray(shop.phones) && shop.phones.length === SHOP_OLD.phones.length &&
+      shop.phones.every(function (p, i) { return p === SHOP_OLD.phones[i]; })) {
+      shop.phones = SHOP_NEW.phones.slice();
+      changed = true;
+    }
+    return changed;
+  }
+
+  MMB.recordHash = function (rec) { return hashRecord(rec); };
+
+  function hashRecord(rec) {
+    const s = JSON.stringify(rec);
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16) + ':' + s.length;
+  }
+
+  // Ledger rows created by a bill are a projection of that bill. Deriving their
+  // ids from the bill makes an edit update the same document on every device
+  // instead of deleting one row and creating another.
+  function ledgerIdFor(e) {
+    if (!e || !e.refType || e.refType === 'manual' || !e.refId) return e && e.id;
+    if (e.refType === 'sale') return 'led_' + e.refId + (e.subtype === 'commission' ? '_commission' : '_sale');
+    if (e.refType === 'purchase') return 'led_' + e.refId + '_purchase';
+    if (e.refType === 'return') return 'led_' + e.refId + '_return';
+    if (e.refType === 'saleReturn') return 'led_' + e.refId + (e.subtype === 'commissionReversal' ? '_commissionReversal' : '_saleReturn');
+    return e.id;
+  }
+
+  function sharedSettingsOf(db) {
+    const s = db.settings;
+    const out = {};
+    SHARED_SETTINGS.forEach(function (k) { out[k] = s[k]; });
+    if (out.shop) {
+      out.shop = Object.assign({}, out.shop);
+      delete out.shop.logo; // the logo is stored separately, it can be large
+    }
+    return out;
+  }
 
   function defaults() {
     return {
       app: 'mmb-dryfruits',
       version: 1,
+      schema: SCHEMA,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      rev: 1,
       settings: {
         lang: 'en',
         theme: 'light',
@@ -17,9 +83,9 @@
           nameUr: 'محمد میر اینڈ برادرز',
           taglineEn: 'Importer & Exporter',
           taglineUr: 'امپورٹر اینڈ ایکسپورٹر',
-          addressEn: 'Shop No. 3, Jani Dost Muhammad Chowk, Chamni Bazar Road, Quetta',
-          addressUr: 'دکان نمبر 3، جانی دوست محمد چوک، چمنی بازار روڈ، کوئٹہ',
-          phones: ['081-2839625', '0301-3761005', '0333-7806994'],
+          addressEn: 'Shop No.3, Haji Doust Muhammad Market, Chuharmal Road, Quetta.',
+          addressUr: 'دکان نمبر 3، حاجی دوست محمد مارکیٹ، چوہرمل روڈ، کوئٹہ',
+          phones: ['03013761005', '03168296398', '03197812344', '03073817033'],
           logo: ''
         },
         commissionRate: 0.45,
@@ -38,7 +104,23 @@
       sales: [],
       purchases: [],
       returns: [],
-      adjustments: []
+      adjustments: [],
+      sync: {
+        uid: null,
+        deviceId: null,
+        cursor: null,
+        lastFetchedServerAt: null,
+        lastSyncedAt: null,
+        dirty: {},
+        tombstones: {},
+        seen: {},
+        base: {},
+        settingsBase: '',
+        dirtySettings: false,
+        logoBase: '',
+        dirtyLogo: false,
+        logoSeen: 0
+      }
     };
   }
 
@@ -56,13 +138,67 @@
     return out;
   }
 
+  function migrate(out) {
+    const now = new Date().toISOString();
+
+    const seen = {};
+    const ledger = [];
+    (out.ledger || []).forEach(function (e) {
+      if (!e || !e.id) return;
+      const id = ledgerIdFor(e);
+      if (id) e.id = id;
+      if (seen[e.id]) return;
+      seen[e.id] = true;
+      if (!e.updatedAt) e.updatedAt = e.createdAt || now;
+      ledger.push(e);
+    });
+    out.ledger = ledger;
+
+    COLLECTIONS.forEach(function (name) {
+      if (name === 'ledger') return;
+      (out[name] || []).forEach(function (rec) {
+        if (!rec.id) rec.id = MMB.uid(name.slice(0, 3));
+        if (!rec.updatedAt) rec.updatedAt = rec.createdAt || now;
+      });
+    });
+
+    // Baseline for the change diff. Only records the diff has never seen are
+    // added, so a pending edit survives a reload.
+    COLLECTIONS.forEach(function (name) {
+      (out[name] || []).forEach(function (rec) {
+        const key = name + ':' + rec.id;
+        if (!out.sync.base[key]) out.sync.base[key] = hashRecord(rec);
+      });
+    });
+    if (!out.sync.settingsBase) out.sync.settingsBase = hashRecord(sharedSettingsOf(out));
+    if (!out.sync.logoBase) out.sync.logoBase = hashRecord({ logo: out.settings.shop.logo || '' });
+  }
+
+  // First run of cloud sync on a device that already had local data: queue
+  // everything once, so the first Sync is not a no-op.
+  function seedOutbox(out) {
+    const now = new Date().toISOString();
+    COLLECTIONS.forEach(function (name) {
+      (out[name] || []).forEach(function (rec) {
+        if (!rec || !rec.id) return;
+        out.sync.dirty[name + ':' + rec.id] = {
+          op: 'set', at: now, entity: name,
+          manual: name === 'ledger' ? rec.refType === 'manual' : false,
+          pair: name === 'ledger' ? !!rec.isPairSide : false
+        };
+      });
+    });
+    out.sync.dirtySettings = true;
+    out.sync.dirtyLogo = true;
+  }
+
   function normalize(raw) {
     const d = defaults();
     const out = Object.assign(d, raw || {});
     out.settings = deepMerge(d.settings, (raw && raw.settings) || {});
     out.settings.shop = deepMerge(d.settings.shop, (raw && raw.settings && raw.settings.shop) || {});
     if (!Array.isArray(out.settings.shop.phones)) out.settings.shop.phones = d.settings.shop.phones.slice();
-    ['accounts', 'products', 'ledger', 'sales', 'purchases', 'returns', 'adjustments'].forEach(function (k) {
+    COLLECTIONS.forEach(function (k) {
       if (!Array.isArray(out[k])) out[k] = [];
     });
     out.settings.billCounter = Math.max(1, Number(out.settings.billCounter) || 227);
@@ -71,13 +207,32 @@
     if (!isFinite(out.settings.commissionRate)) out.settings.commissionRate = 0.45;
     out.app = 'mmb-dryfruits';
     out.version = 1;
+    out.schema = SCHEMA;
+    out.rev = Math.max(1, Number(out.rev) || 1);
+    out.sync = Object.assign({}, d.sync, (raw && raw.sync) || {});
+    ['dirty', 'tombstones', 'seen', 'base'].forEach(function (k) {
+      if (!out.sync[k] || typeof out.sync[k] !== 'object' || Array.isArray(out.sync[k])) out.sync[k] = {};
+    });
+    migrate(out);
+
+    if (upgradeShopDefaults(out)) {
+      // Make the new profile the baseline and queue it for the next Sync.
+      out.sync.settingsBase = hashRecord(sharedSettingsOf(out));
+      out.sync.dirtySettings = true;
+    }
+
+    const hasData = COLLECTIONS.some(function (k) { return out[k].length > 0; });
+    const neverSynced = !out.sync.uid && !out.sync.lastSyncedAt && !out.sync.lastFetchedAt;
+    const hasPending = Object.keys(out.sync.dirty).length > 0;
+    if (hasData && neverSynced && !hasPending) seedOutbox(out);
+
     return out;
   }
 
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (!raw) return defaults();
+      if (!raw) return normalize(null);
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') return defaults();
       return normalize(parsed);
@@ -89,21 +244,76 @@
 
   MMB.db = load();
 
-  MMB.save = function () {
+  // Compares every record with the last known fingerprint and records what
+  // changed. This keeps all existing mutation code untouched.
+  function markDirty() {
+    const d = MMB.db;
+    const s = d.sync;
+    const now = new Date().toISOString();
+
+    COLLECTIONS.forEach(function (name) {
+      const present = {};
+      (d[name] || []).forEach(function (rec) {
+        if (!rec || !rec.id) return;
+        const key = name + ':' + rec.id;
+        present[key] = true;
+        if (s.base[key] === hashRecord(rec)) return;
+        rec.updatedAt = now;
+        s.base[key] = hashRecord(rec);
+        s.dirty[key] = {
+          op: 'set', at: now, entity: name,
+          manual: name === 'ledger' ? rec.refType === 'manual' : false,
+          pair: name === 'ledger' ? !!rec.isPairSide : false
+        };
+        delete s.tombstones[key];
+      });
+      Object.keys(s.base).forEach(function (key) {
+        if (key.indexOf(name + ':') !== 0) return;
+        if (present[key]) return;
+        const prev = s.dirty[key];
+        delete s.base[key];
+        s.dirty[key] = {
+          op: 'del', at: now, entity: name,
+          manual: prev ? !!prev.manual : false,
+          pair: prev ? !!prev.pair : false
+        };
+        if (!s.tombstones[key]) s.tombstones[key] = { at: now, pushed: false };
+      });
+    });
+
+    const sh = hashRecord(sharedSettingsOf(d));
+    if (s.settingsBase !== sh) {
+      s.settingsBase = sh;
+      s.dirtySettings = true;
+    }
+
+    const lh = hashRecord({ logo: d.settings.shop.logo || '' });
+    if (s.logoBase !== lh) {
+      s.logoBase = lh;
+      s.dirtyLogo = true;
+    }
+  }
+
+  MMB.save = function (opts) {
+    opts = opts || {};
     // Guard against a stale tab overwriting newer data from another tab.
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const prev = JSON.parse(raw);
-        if (prev && prev.updatedAt && MMB.db.updatedAt && prev.updatedAt > MMB.db.updatedAt) {
+        if (prev && Number(prev.rev || 0) > Number(MMB.db.rev || 0)) {
           if (MMB.toast) MMB.toast(MMB.t('settings.anotherTab'), 'error');
           return false;
         }
       }
     } catch (e) { /* ignore */ }
+
+    MMB.db.rev = (Number(MMB.db.rev) || 1) + 1;
+    if (opts.origin !== 'remote') markDirty();
     MMB.db.updatedAt = new Date().toISOString();
     try {
       localStorage.setItem(KEY, JSON.stringify(MMB.db));
+      if (MMB.onSyncChange) MMB.onSyncChange();
       return true;
     } catch (e) {
       console.error(e);
@@ -112,15 +322,35 @@
     }
   };
 
+  // One "transaction" can touch a bill plus its ledger rows. Count what the
+  // user did, not every row the bill generated.
+  MMB.pendingCount = function () {
+    const s = MMB.db.sync;
+    let n = 0;
+    Object.keys(s.dirty).forEach(function (key) {
+      const d = s.dirty[key];
+      if (d.entity !== 'ledger') n++;
+      else if (d.manual && !d.pair) n++;
+    });
+    return n;
+  };
+
+  MMB.sharedSettings = function () { return sharedSettingsOf(MMB.db); };
+  MMB.sharedSettingsHash = function (db) { return hashRecord(sharedSettingsOf(db || MMB.db)); };
+
   MMB.resetData = function () {
     try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
     MMB.db = defaults();
+    // A cleared device must not push default settings over the cloud copy.
+    MMB.db.sync.settingsBase = hashRecord(sharedSettingsOf(MMB.db));
+    MMB.db.sync.logoBase = hashRecord({ logo: MMB.db.settings.shop.logo || '' });
     MMB.save();
   };
 
   MMB.settings = function () { return MMB.db.settings; };
   MMB.accounts = function (type) {
-    return type ? MMB.db.accounts.filter(function (a) { return a.type === type; }) : MMB.db.accounts.slice();
+    const list = MMB.db.accounts.filter(function (a) { return !a.deleted; });
+    return type ? list.filter(function (a) { return a.type === type; }) : list;
   };
   MMB.account = function (id) { return MMB.db.accounts.find(function (a) { return a.id === id; }) || null; };
   MMB.product = function (id) { return MMB.db.products.find(function (p) { return p.id === id; }) || null; };
@@ -166,7 +396,11 @@
 
   MMB.deleteAccount = function (id) {
     if (MMB.accountIsUsed(id)) return { ok: false, reason: 'used' };
-    MMB.db.accounts = MMB.db.accounts.filter(function (a) { return a.id !== id; });
+    const a = MMB.account(id);
+    if (!a) return { ok: false };
+    // Soft delete: old bills keep resolving the name on every device.
+    a.deleted = true;
+    a.deletedAt = new Date().toISOString();
     MMB.save();
     return { ok: true };
   };
@@ -323,6 +557,7 @@
     const q = normName(query);
     if (!q) return null;
     return MMB.db.products.find(function (p) {
+      if (p.deleted) return false;
       if (normName(p.name) === q) return true;
       return (p.aliases || []).some(function (a) { return normName(a) === q; });
     }) || null;
@@ -331,6 +566,7 @@
   MMB.searchProducts = function (query) {
     const q = normName(query);
     return MMB.db.products.filter(function (p) {
+      if (p.deleted) return false;
       if (!q) return true;
       if (normName(p.name).indexOf(q) !== -1) return true;
       return (p.aliases || []).some(function (a) { return normName(a).indexOf(q) !== -1; });
@@ -387,7 +623,11 @@
 
   MMB.deleteProduct = function (id) {
     if (MMB.productIsUsed(id)) return { ok: false, error: 'used' };
-    MMB.db.products = MMB.db.products.filter(function (p) { return p.id !== id; });
+    const p = MMB.product(id);
+    if (!p) return { ok: false };
+    // Soft delete: historical stock/bill lines keep resolving the product.
+    p.deleted = true;
+    p.deletedAt = new Date().toISOString();
     MMB.save();
     return { ok: true };
   };
@@ -529,14 +769,16 @@
     const d = MMB.db;
     d.ledger = d.ledger.filter(function (e) { return !(e.refType === 'sale' && e.refId === s.id); });
     d.ledger.push({
-      id: MMB.uid('led'), accountId: s.customerId, type: 'debit', amount: s.total,
+      id: ledgerIdFor({ refType: 'sale', refId: s.id, subtype: 'sale' }),
+      accountId: s.customerId, type: 'debit', amount: s.total,
       details: 'Bill #' + s.billNo, date: s.date, time: s.time,
       refType: 'sale', refId: s.id, subtype: 'sale', meta: { no: s.billNo },
       createdAt: new Date().toISOString()
     });
     if (s.brokerId && s.commission > 0) {
       d.ledger.push({
-        id: MMB.uid('led'), accountId: s.brokerId, type: 'credit', amount: s.commission,
+        id: ledgerIdFor({ refType: 'sale', refId: s.id, subtype: 'commission' }),
+        accountId: s.brokerId, type: 'credit', amount: s.commission,
         details: 'Brokerage · Bill #' + s.billNo, date: s.date, time: s.time,
         refType: 'sale', refId: s.id, subtype: 'commission', meta: { no: s.billNo },
         createdAt: new Date().toISOString()
@@ -651,7 +893,8 @@
 
     d.ledger = d.ledger.filter(function (e) { return !(e.refType === 'purchase' && e.refId === purchase.id); });
     d.ledger.push({
-      id: MMB.uid('led'), accountId: purchase.supplierId, type: 'credit', amount: total,
+      id: ledgerIdFor({ refType: 'purchase', refId: purchase.id, subtype: 'purchase' }),
+      accountId: purchase.supplierId, type: 'credit', amount: total,
       details: 'Purchase ' + purchase.no, date: purchase.date, time: purchase.time,
       refType: 'purchase', refId: purchase.id, subtype: 'purchase', meta: { no: purchase.no },
       createdAt: new Date().toISOString()
@@ -708,7 +951,8 @@
     };
     d.returns.push(ret);
     d.ledger.push({
-      id: MMB.uid('led'), accountId: ret.supplierId, type: 'debit', amount: total,
+      id: ledgerIdFor({ refType: 'return', refId: ret.id, subtype: 'return' }),
+      accountId: ret.supplierId, type: 'debit', amount: total,
       details: 'Return · Purchase ' + purchase.no, date: ret.date, time: ret.time,
       refType: 'return', refId: ret.id, subtype: 'return', meta: { no: purchase.no },
       createdAt: new Date().toISOString()
@@ -777,14 +1021,16 @@
     };
     d.returns.push(ret);
     d.ledger.push({
-      id: MMB.uid('led'), accountId: ret.customerId, type: 'credit', amount: total,
+      id: ledgerIdFor({ refType: 'saleReturn', refId: ret.id, subtype: 'saleReturn' }),
+      accountId: ret.customerId, type: 'credit', amount: total,
       details: 'Return · Bill #' + sale.billNo, date: ret.date, time: ret.time,
       refType: 'saleReturn', refId: ret.id, subtype: 'saleReturn', meta: { no: sale.billNo },
       createdAt: new Date().toISOString()
     });
     if (ret.brokerId && commissionReversal > 0) {
       d.ledger.push({
-        id: MMB.uid('led'), accountId: ret.brokerId, type: 'debit', amount: commissionReversal,
+        id: ledgerIdFor({ refType: 'saleReturn', refId: ret.id, subtype: 'commissionReversal' }),
+        accountId: ret.brokerId, type: 'debit', amount: commissionReversal,
         details: 'Brokerage reversal · Bill #' + sale.billNo, date: ret.date, time: ret.time,
         refType: 'saleReturn', refId: ret.id, subtype: 'commissionReversal', meta: { no: sale.billNo },
         createdAt: new Date().toISOString()
@@ -898,6 +1144,7 @@
   MMB.summary = function () {
     let receivable = 0, payable = 0, cash = 0, expenses = 0, customerCount = 0, brokerCount = 0;
     MMB.db.accounts.forEach(function (a) {
+      if (a.deleted) return;
       const b = MMB.accountBalance(a.id);
       if (a.type === 'customer') {
         customerCount++;
@@ -976,7 +1223,7 @@
   MMB.lowStock = function (sd) {
     const stock = sd || MMB.computeStock();
     const limit = MMB.db.settings.lowStockKg;
-    return MMB.db.products.map(function (p) {
+    return MMB.db.products.filter(function (p) { return !p.deleted; }).map(function (p) {
       const st = stock.states[p.id] || { qty: 0 };
       const low = p.lowStockKg == null ? limit : p.lowStockKg;
       return { product: p, qty: st.qty, limit: low };
@@ -996,6 +1243,8 @@
     MMB.db.settings.backupLastAt = new Date().toISOString();
     MMB.save();
     const payload = JSON.parse(JSON.stringify(MMB.db));
+    delete payload.sync;
+    delete payload.rev;
     payload.exportedAt = new Date().toISOString();
     payload.app = 'mmb-dryfruits';
     return JSON.stringify(payload, null, 2);
@@ -1005,7 +1254,9 @@
     if (!obj || typeof obj !== 'object') return { ok: false };
     if (!Array.isArray(obj.accounts) || !Array.isArray(obj.ledger) || !Array.isArray(obj.sales)) return { ok: false };
     MMB.db = normalize(obj);
-    // An explicit restore is allowed to replace older or newer data.
+    // A restore is a fresh local baseline: never inherit sync bookkeeping from
+    // a backup file, and queue every imported record for the next sync.
+    MMB.db.sync = defaults().sync;
     MMB.db.updatedAt = new Date().toISOString();
     MMB.save();
     return { ok: true };
@@ -1014,6 +1265,7 @@
   MMB.csvAccounts = function () {
     const rows = [['Name', 'Type', 'Phone', 'Balance']];
     MMB.db.accounts.forEach(function (a) {
+      if (a.deleted) return;
       rows.push([a.name, MMB.typeLabel(a.type), a.phone, MMB.accountBalance(a.id)]);
     });
     return MMB.toCSV(rows);
@@ -1056,6 +1308,7 @@
     const sd = MMB.computeStock();
     const rows = [['Product', 'Qty (kg)', 'Avg cost', 'Value', 'Low stock at']];
     MMB.db.products.forEach(function (p) {
+      if (p.deleted) return;
       const st = sd.states[p.id] || { qty: 0, avg: 0, value: 0 };
       rows.push([p.name, st.qty, st.avg, st.value, p.lowStockKg == null ? MMB.db.settings.lowStockKg : p.lowStockKg]);
     });

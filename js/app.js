@@ -3,6 +3,10 @@
   const MMB = window.MMB;
   const t = MMB.t;
 
+  let appStarted = false;
+  let chromeBound = false;
+  let backBound = false;
+
   MMB.setFAB = function (html) {
     const host = document.getElementById('fabHost');
     if (host) host.innerHTML = html || '';
@@ -41,7 +45,7 @@
     let sub = MMB.fmtDate(MMB.todayISO()) + ' · ' + MMB.weekday(MMB.todayISO());
     if (route.name === 'accounts') {
       title = t('accounts.title');
-      sub = MMB.db.accounts.length === 1 ? t('accounts.countOne', { n: 1 }) : t('accounts.count', { n: MMB.db.accounts.length });
+      sub = MMB.accounts().length === 1 ? t('accounts.countOne', { n: 1 }) : t('accounts.count', { n: MMB.accounts().length });
     } else if (route.name === 'account') {
       const a = MMB.account(route.id);
       title = a ? a.name : t('accounts.title');
@@ -113,7 +117,7 @@
     MMB.save();
     document.documentElement.setAttribute('data-theme', theme);
     updateThemeButton();
-    renderCurrent(false);
+    if (appStarted) renderCurrent(false);
   };
 
   MMB.setLanguage = function (lang) {
@@ -122,7 +126,7 @@
     MMB.save();
     MMB.setLang(lang);
     MMB.updateStatic();
-    renderCurrent(false);
+    if (appStarted) renderCurrent(false);
   };
 
   /* ── PIN lock ─────────────────────────────────────────────── */
@@ -240,6 +244,8 @@
   }
 
   function initNativeBack() {
+    if (backBound) return;
+    backBound = true;
     if (!MMB.isNativeApp || !MMB.isNativeApp()) return;
     const capacitor = window.Capacitor;
     const app = capacitor && capacitor.Plugins ? capacitor.Plugins.App : null;
@@ -247,6 +253,8 @@
     app.addListener('backButton', function () {
       const lock = document.getElementById('lockScreen');
       if (lock && !lock.hidden) return;
+      const authScreen = document.getElementById('authScreen');
+      if (authScreen && !authScreen.hidden) return;
       if (MMB.hasOverlay()) { MMB.closeTop(); return; }
       const route = parseRoute();
       if (route.name === 'account') MMB.navigate('accounts');
@@ -257,13 +265,108 @@
     });
   }
 
-  /* ── init ─────────────────────────────────────────────────── */
-  function init() {
-    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-    MMB.setLang(MMB.db.settings.lang || 'en');
-    document.documentElement.setAttribute('data-theme', MMB.db.settings.theme === 'dark' ? 'dark' : 'light');
-    MMB.updateStatic();
-    updateThemeButton();
+  /* ── cloud controls ───────────────────────────────────────── */
+  function fmtSyncTime(iso) {
+    if (!iso) return t('sync.never');
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return t('sync.never');
+    try {
+      return d.toLocaleString(MMB.lang() === 'ur' ? 'ur-PK' : 'en-GB', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+      });
+    } catch (e) {
+      return MMB.fmtDate(iso.slice(0, 10)) + ' ' + MMB.fmtTime(iso.slice(11, 16));
+    }
+  }
+
+  function refreshSyncUI() {
+    const n = MMB.pendingCount ? MMB.pendingCount() : 0;
+    const badge = document.getElementById('syncBadge');
+    if (badge) {
+      badge.textContent = n > 99 ? '99+' : String(n);
+      badge.hidden = n === 0;
+    }
+    const syncBtn = document.getElementById('syncBtn');
+    if (syncBtn) syncBtn.classList.toggle('has-pending', n > 0);
+    const stamp = document.getElementById('syncStamp');
+    if (stamp) {
+      const iso = (MMB.sync && MMB.sync.lastFetchedISO) ? MMB.sync.lastFetchedISO() : null;
+      stamp.textContent = t('sync.lastFetched', { time: fmtSyncTime(iso) });
+      stamp.hidden = false;
+    }
+  }
+
+  function onSyncState(kind) {
+    const sb = document.getElementById('syncBtn');
+    const fb = document.getElementById('fetchBtn');
+    if (sb) {
+      sb.classList.toggle('spinning', kind === 'pushing');
+      sb.disabled = !!kind;
+      if (kind === 'pushing') sb.setAttribute('aria-label', t('sync.syncing'));
+      else sb.setAttribute('aria-label', t('sync.sync'));
+    }
+    if (fb) {
+      fb.classList.toggle('spinning', kind === 'fetching');
+      fb.disabled = !!kind;
+      if (kind === 'fetching') fb.setAttribute('aria-label', t('sync.fetching'));
+      else fb.setAttribute('aria-label', t('sync.fetch'));
+    }
+    if (!kind) refreshSyncUI();
+  }
+
+  // Never repaint a form that the user is filling in. The data is already
+  // applied; the next navigation shows it.
+  function safeRerender() {
+    if (MMB.hasOverlay && MMB.hasOverlay()) return;
+    const route = parseRoute();
+    if (route.name === 'saleForm' || route.name === 'purchaseForm') return;
+    if (appStarted) renderCurrent(false);
+  }
+
+  MMB.safeRerender = safeRerender;
+
+  function syncErrorText(code) {
+    if (code === 'not-signed-in') return t('sync.notSignedIn');
+    if (code === 'permission-denied') return t('sync.denied');
+    if (code === 'unavailable') return t('sync.offline');
+    return t('sync.failed');
+  }
+
+  async function doSync() {
+    if (!MMB.sync || MMB.sync.busy()) return;
+    if (!navigator.onLine) { MMB.toast(t('sync.offline'), 'error'); return; }
+    const res = await MMB.sync.push();
+    if (!res || !res.ok) {
+      if (res && res.error === 'busy') return;
+      MMB.toast(syncErrorText(res && res.error), 'error');
+      return;
+    }
+    refreshSyncUI();
+    safeRerender();
+    if (res.empty || !res.pushed) MMB.toast(t('sync.upToDate'), 'gold');
+    else MMB.toast(t('sync.synced', { n: Math.max(1, res.transactions != null ? res.transactions : res.pushed) }), 'gold');
+  }
+
+  async function doFetch() {
+    if (!MMB.sync || MMB.sync.busy()) return;
+    if (!navigator.onLine) { MMB.toast(t('sync.offline'), 'error'); return; }
+    const res = await MMB.sync.fetch();
+    if (!res || !res.ok) {
+      if (res && res.error === 'busy') return;
+      MMB.toast(syncErrorText(res && res.error), 'error');
+      return;
+    }
+    refreshSyncUI();
+    safeRerender();
+    if (res.discarded) MMB.toast(t('sync.deletedLocal', { n: res.discarded }), 'error');
+    else if (res.fetched) MMB.toast(t('sync.fetched', { n: res.fetched }), 'gold');
+    else MMB.toast(t('sync.upToDate'), 'gold');
+  }
+
+  /* ── auth gate ────────────────────────────────────────────── */
+  function bindChrome() {
+    if (chromeBound) return;
+    chromeBound = true;
 
     document.getElementById('langBtn').addEventListener('click', function () {
       MMB.setLanguage(MMB.lang() === 'en' ? 'ur' : 'en');
@@ -278,19 +381,99 @@
     const sidePurchase = document.getElementById('sidePurchaseBtn');
     if (sidePurchase) sidePurchase.addEventListener('click', function () { MMB.openPurchaseForm(); });
 
-    window.addEventListener('hashchange', function () { renderCurrent(true); });
+    const syncBtn = document.getElementById('syncBtn');
+    if (syncBtn) syncBtn.addEventListener('click', doSync);
+    const fetchBtn = document.getElementById('fetchBtn');
+    if (fetchBtn) fetchBtn.addEventListener('click', doFetch);
+
+    MMB.onSyncChange = refreshSyncUI;
+    MMB.onSyncState = onSyncState;
+
+    window.addEventListener('hashchange', function () { if (appStarted) renderCurrent(true); });
 
     window.addEventListener('storage', function (e) {
       if (e.key === 'mmb_dryfruits_v1') MMB.toast(t('settings.anotherTabReload'), 'gold');
     });
 
+    window.addEventListener('online', function () {
+      const off = document.getElementById('authOffline');
+      if (off) off.hidden = true;
+    });
+    window.addEventListener('offline', function () {
+      const off = document.getElementById('authOffline');
+      const screen = document.getElementById('authScreen');
+      if (off && screen && !screen.hidden) off.hidden = false;
+    });
+  }
+
+  function hideAuth() {
+    const authScreen = document.getElementById('authScreen');
+    if (authScreen) authScreen.hidden = true;
+    const boot = document.getElementById('bootGate');
+    if (boot) boot.hidden = true;
+    document.body.classList.remove('auth-pending', 'signed-out');
+    document.body.classList.add('authed');
+  }
+
+  function showAuth(message) {
+    MMB.closeAll();
+    const lock = document.getElementById('lockScreen');
+    if (lock) lock.hidden = true;
+    try { sessionStorage.removeItem('mmb_unlocked'); } catch (e) { /* ignore */ }
+
+    document.body.classList.remove('authed', 'auth-pending');
+    document.body.classList.add('signed-out');
+    document.body.style.overflow = '';
+
+    const boot = document.getElementById('bootGate');
+    if (boot) boot.hidden = true;
+    const authScreen = document.getElementById('authScreen');
+    if (authScreen) authScreen.hidden = false;
+
+    MMB.applyI18n(document);
+    MMB.setAuthError(message || '');
+    const pass = document.getElementById('authPassword');
+    if (pass) pass.value = '';
+    const email = document.getElementById('authEmail');
+    if (email && !email.value) { try { email.focus(); } catch (e) { /* ignore */ } }
+  }
+
+  function startApp() {
+    hideAuth();
+    if (appStarted) {
+      MMB.updateStatic();
+      renderCurrent(false);
+      refreshSyncUI();
+      initLock();
+      return;
+    }
+    appStarted = true;
     if (!location.hash) {
       try { history.replaceState(null, '', '#/dashboard'); } catch (e) { location.hash = '#/dashboard'; }
     }
+    MMB.updateStatic();
     renderCurrent(true);
+    refreshSyncUI();
     initLock();
     initNativeBack();
     if (MMB.initUpdater) MMB.initUpdater();
+  }
+
+  /* ── init ─────────────────────────────────────────────────── */
+  function init() {
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    MMB.setLang(MMB.db.settings.lang || 'en');
+    document.documentElement.setAttribute('data-theme', MMB.db.settings.theme === 'dark' ? 'dark' : 'light');
+    MMB.applyI18n(document);
+    updateThemeButton();
+    bindChrome();
+    MMB.bindAuthScreen();
+
+    MMB.cloud.onChange(function (user, err) {
+      if (user) startApp();
+      else showAuth(err === 'unavailable' ? t('auth.unavailable') : '');
+    });
+    MMB.cloud.init();
 
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0 && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
       window.addEventListener('load', function () {

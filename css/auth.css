@@ -1,0 +1,169 @@
+/* ── Auth gate: boot screen and sign-in card ───────────────────── */
+
+body.auth-pending #appShell,
+body.auth-pending .bottom-nav,
+body.auth-pending #fabHost,
+body.signed-out #appShell,
+body.signed-out .bottom-nav,
+body.signed-out #fabHost { display: none; }
+
+.boot-gate,
+.auth-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  padding-top: max(22px, calc(18px + var(--safe-t)));
+  padding-bottom: max(22px, calc(18px + var(--safe-b)));
+  overflow-y: auto;
+  color: #F7F2E8;
+  background:
+    radial-gradient(900px 600px at 100% 0%, rgba(217, 169, 75, .18), transparent 55%),
+    radial-gradient(900px 600px at 0% 100%, rgba(127, 168, 138, .16), transparent 55%),
+    #101B15;
+}
+
+.boot-gate { flex-direction: column; gap: 14px; }
+.boot-gate p { color: #AFC1AF; font-size: 12px; margin: 0; }
+.boot-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .18);
+  border-top-color: var(--gold-2, #D9A94B);
+  animation: bootSpin .8s linear infinite;
+}
+@keyframes bootSpin { to { transform: rotate(360deg); } }
+
+.auth-card {
+  position: relative;
+  width: 100%;
+  max-width: 372px;
+  margin: auto;
+  padding: 26px 22px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  background: rgba(255, 255, 255, .045);
+  box-shadow: 0 30px 70px -40px #000;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+.auth-lang {
+  position: absolute;
+  top: 12px;
+  inset-inline-end: 14px;
+  padding: 5px 11px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: rgba(255, 255, 255, .05);
+  color: #C8D3C4;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.auth-lang:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+
+.auth-mark {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 12px;
+  filter: drop-shadow(0 12px 30px rgba(0, 0, 0, .4));
+}
+
+.auth-card h2 {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  margin: 0;
+}
+
+.auth-card > p {
+  color: #AFC1AF;
+  font-size: 11.5px;
+  margin: 5px 0 0;
+}
+
+.auth-card .label {
+  display: block;
+  color: #C8D3C4;
+  text-align: start;
+  margin: 17px 0 6px;
+}
+
+.auth-card .input {
+  width: 100%;
+  height: 46px;
+  background: rgba(255, 255, 255, .07);
+  border-color: rgba(255, 255, 255, .14);
+  color: #F7F2E8;
+}
+
+.auth-card .input::placeholder { color: #7E9182; }
+.auth-card .input:focus {
+  border-color: var(--gold-2, #D9A94B);
+  box-shadow: 0 0 0 3px rgba(217, 169, 75, .15);
+  outline: none;
+}
+
+.auth-pass { position: relative; }
+.auth-pass .input { padding-inline-end: 48px; }
+
+.auth-eye {
+  position: absolute;
+  inset-inline-end: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #AFC1AF;
+  cursor: pointer;
+}
+.auth-eye:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.auth-eye .ic { width: 18px; height: 18px; }
+.auth-eye.on { color: var(--gold-2, #D9A94B); }
+
+.auth-error {
+  min-height: 20px;
+  margin-top: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #F0B4A8;
+}
+
+.auth-card .auth-submit {
+  height: 46px;
+  margin-top: 4px;
+  border: 0;
+  background: linear-gradient(180deg, #E4B75C, #D9A94B);
+  color: #1F2A20;
+  font-weight: 800;
+  box-shadow: 0 12px 26px -16px rgba(217, 169, 75, .9);
+}
+.auth-card .auth-submit:hover { background: #E9C47C; }
+.auth-card .auth-submit.busy { opacity: .72; }
+
+.auth-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  min-height: 16px;
+}
+.auth-foot .hint { color: #E9C47C; font-size: 10.5px; text-align: center; }
+
+.auth-note { color: #7E9182; font-size: 10px; line-height: 1.5; margin: 14px 0 0; }
+
+[dir="rtl"] .auth-card h2 { font-family: var(--font-nastaliq); line-height: 1.8; }

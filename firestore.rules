@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Any account that exists in this Firebase project and signs in with the
+    // correct email/password may read and write. Accounts are created by the
+    // owner in Authentication -> Users; the app has no sign-up screen.
+    // For extra safety, block new account creation in the Firebase console
+    // (Authentication -> Settings -> User actions) if your project offers it.
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // One collection for every business record (accounts, products, bills,
+    // ledger rows, ...). A single query keeps Fetch in one consistent
+    // snapshot, which is what makes the cursor gap-free.
+    match /records/{id} {
+      allow read, write: if signedIn();
+    }
+
+    // Shared shop settings and the shop logo.
+    match /meta/{doc} {
+      allow read, write: if signedIn();
+    }
+  }
+}

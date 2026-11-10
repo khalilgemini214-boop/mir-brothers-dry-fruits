@@ -124,7 +124,14 @@ js/views/dashboard.js
 js/views/accounts.js     accounts list + ledger
 js/views/stock.js        stock in/out, forms, purchase/sale returns, adjustments
 js/views/settings.js
-js/app.js                router, theme, language, PIN lock
+js/app.js                router, theme, language, PIN lock, sync buttons
+js/cloud-config.js       Firebase web config (public values)
+js/cloud.js              Firebase Auth gate, login screen, session
+js/sync.js               Firestore push (Sync) and read-only pull (Fetch)
+css/auth.css             login / boot screen
+css/sync.css             header sync badge and last-fetch stamp
+firestore.rules          Firestore security rules
+firebase.json            rules + emulator config
 manifest.webmanifest     installable web app
 sw.js                    offline cache for web/PWA
 assets/                  logo, icon, fonts
@@ -137,11 +144,36 @@ android/                 generated Capacitor Android project (signed via CI secr
 .github/workflows/deploy.yml  Pages deploy + signed APK release
 ```
 
+## Cloud sync (Firebase Auth + Firestore)
+
+The app is still offline-first: localStorage is the working copy. The cloud is only touched by the two header buttons.
+
+**Setup (one time)**
+
+1. Create a Firebase project and a **Web App**; copy the config into `js/cloud-config.js`.
+2. Authentication → Sign-in method → enable **Email/Password**. There is no sign-up in the app.
+3. Authentication → Users → **Add user** for every email that may use the app. Any account that exists in the project can sign in and use the cloud data — there is no per-UID allowlist.
+4. Create Firestore (production mode).
+5. Deploy the rules in `firestore.rules` (they allow any signed-in account):
+   `firebase deploy --only firestore:rules`
+6. Authentication → Settings → Authorized domains: add `localhost` and your GitHub Pages domain. The Capacitor app uses `https://localhost`.
+7. Security: because every existing account has full access, keep account creation under your control. If your Firebase console shows **Authentication → Settings → User actions → Block account creation**, turn it on. Otherwise use strong passwords and add accounts only from the console. The web `apiKey` is public by design; the rules, not the key, decide who gets in.
+
+**Behaviour**
+
+- **Sync** uploads the pending changes shown in its badge. A device that already had local data before this update queues all of it once, so the first Sync uploads the existing shop. Deletes are written as tombstones, never as Firestore `delete()` calls.
+- **Fetch** only reads. All records live in one `records` collection, so a fetch is a single consistent Firestore snapshot. It requests records whose `_serverUpdatedAt` is at or after the stored cursor and shows that server time in the header / Settings.
+- A record with pending local changes is never overwritten by Fetch. Another device's delete wins over a pending local edit (by design).
+- The bill and purchase counters are local to each device. Two devices creating bills offline can produce the same number; the list flags duplicates.
+- Full resync is in Settings → Cloud. It resets the cursor and fetches everything again; it never uploads.
+- The shop logo is stored in `meta/branding`, separate from the settings document, because it can be large.
+
 ## Known scope notes
 
 - **Android only** for the native wrapper. iOS can be added later with `npx cap add ios` on macOS.
 - The first APK must be built by the GitHub Action (or with `PAGES_BASE_URL` set) so its baked feed URL points at GitHub. A local APK with the default `./update.json` cannot receive OTA updates.
 - The same signing keystore must be used for every APK; otherwise Android will refuse to install the update over the old app. Back up the keystore.
-- No cloud sync; data is per device/browser. Use Settings → Data & backup to move devices.
+- Cloud data requires network access and a signed-in account. The first login on a new device must be online. A signed-in session keeps working offline; Sync and Fetch need a connection.
+- Backups (Settings → Data & backup) remain the safest way to move or archive a device.
 - The PIN is a screen lock only, not encryption.
 - The first bill number defaults to `0227`; change it in Settings to match your bill book.
