@@ -76,8 +76,6 @@
       const isUr = MMB.lang() === 'ur';
       const name = isUr ? shop.nameUr : shop.nameEn;
       const tagline = isUr ? shop.taglineUr : shop.taglineEn;
-      const backupDays = MMB.backupAgeDays();
-      const hasData = db.accounts.length > 0 || db.sales.length > 0 || db.purchases.length > 0;
       const salesCount = db.sales.filter(function (s) { return MMB.monthKey(s.date) === MMB.thisMonthKey(); }).length;
 
       const monthStart = MMB.todayISO().slice(0, 8) + '01';
@@ -104,7 +102,6 @@
 
       root.innerHTML =
         '<div id="dashUpdateBanner"></div>' +
-        (backupDays > 7 && hasData ? '<div class="banner">' + MMB.icon('database') + '<span>' + t('dashboard.backupNudge') + '</span><button class="btn btn-sm btn-gold" data-action="backup">' + t('dashboard.backupNow') + '</button></div>' : '') +
         '<section class="hero fade-up">' +
         '<div class="hero-greet">' + t('dashboard.greeting') + '</div>' +
         '<div class="hero-title">' + MMB.esc(name) + '</div>' +
@@ -199,7 +196,6 @@
           else if (a === 'stock') { MMB.navigate('stock/out'); }
           else if (a === 'newAccount') { MMB.openAccountForm({}); }
           else if (a === 'adjust') { MMB.openAdjustmentForm && MMB.openAdjustmentForm(); }
-          else if (a === 'backup') { if (MMB.downloadBackup) MMB.downloadBackup(); }
         });
       });
 
