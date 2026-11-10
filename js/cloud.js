@@ -22,9 +22,29 @@
     if (changeHandler) changeHandler(currentUser, lastError);
   }
 
+  function forceOnlineInWebView() {
+    const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    if (!native) return;
+    // The Firestore SDK checks navigator.onLine internally. Some Android
+    // WebViews report false even with internet, which makes the SDK refuse to
+    // hit the server ("Failed to get document because the client is offline").
+    // The app no longer gates anything on this flag, so force it and tell the
+    // SDK the network is back.
+    try {
+      Object.defineProperty(navigator, 'onLine', {
+        configurable: true,
+        get: function () { return true; }
+      });
+      window.dispatchEvent(new Event('online'));
+    } catch (e) {
+      console.warn('Could not override navigator.onLine', e);
+    }
+  }
+
   function init() {
     if (booted) return;
     booted = true;
+    forceOnlineInWebView();
     if (!configured() || !window.firebase) {
       console.error('Firebase is not configured or the SDK did not load.');
       lastError = 'unavailable';

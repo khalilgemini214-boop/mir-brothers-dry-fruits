@@ -386,7 +386,14 @@
   // from "WebChannel transport" problems.
   async function testConnection() {
     const cfg = window.MMB_FIREBASE || {};
-    const out = { project: cfg.projectId || '', startedAt: new Date().toISOString(), rest: null, sdk: null };
+    const out = {
+      project: cfg.projectId || '',
+      startedAt: new Date().toISOString(),
+      online: (function () { try { return navigator.onLine; } catch (e) { return null; } })(),
+      native: !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()),
+      rest: null,
+      sdk: null
+    };
     let token = null;
     try {
       const user = window.firebase && firebase.auth ? firebase.auth().currentUser : null;
