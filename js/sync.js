@@ -9,6 +9,7 @@
 
   let fs = null;
   let busy = null;
+  let transport = 'streaming';
 
   function getDb() {
     if (!fs) {
@@ -20,8 +21,12 @@
       const native = (MMB.isNativeApp && MMB.isNativeApp()) ||
         !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
       if (native && fs.settings) {
-        try { fs.settings({ experimentalForceLongPolling: true }); }
-        catch (e) { console.warn('Firestore long-polling setting failed', e); }
+        try {
+          fs.settings({ experimentalForceLongPolling: true });
+          transport = 'long-polling';
+        } catch (e) {
+          console.warn('Firestore long-polling setting failed', e);
+        }
       }
     }
     return fs;
@@ -376,9 +381,62 @@
     }
   }
 
+  // Tests both paths: a plain HTTPS request to the Firestore REST API and the
+  // real SDK read. Together they separate "database/project/network" problems
+  // from "WebChannel transport" problems.
+  async function testConnection() {
+    const cfg = window.MMB_FIREBASE || {};
+    const out = { project: cfg.projectId || '', startedAt: new Date().toISOString(), rest: null, sdk: null };
+    let token = null;
+    try {
+      const user = window.firebase && firebase.auth ? firebase.auth().currentUser : null;
+      if (!user) {
+        out.stage = 'auth';
+        out.error = 'not-signed-in';
+        return out;
+      }
+      out.uid = user.uid;
+      token = await user.getIdToken();
+    } catch (e) {
+      out.stage = 'auth';
+      out.error = String((e && e.message) || e).slice(0, 300);
+      return out;
+    }
+
+    try {
+      const url = 'https://firestore.googleapis.com/v1/projects/' +
+        encodeURIComponent(cfg.projectId || '') +
+        '/databases/(default)/documents/records?pageSize=1';
+      const started = Date.now();
+      const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+      const body = await res.text();
+      out.rest = { ok: res.ok, status: res.status, ms: Date.now() - started, body: body.slice(0, 700) };
+    } catch (e) {
+      out.rest = { ok: false, status: 0, error: String((e && e.message) || e).slice(0, 300) };
+    }
+
+    try {
+      const db = getDb();
+      out.transport = transport;
+      const started = Date.now();
+      const snap = await db.collection('records').limit(1).get();
+      out.sdk = { ok: true, docs: snap.size, ms: Date.now() - started };
+    } catch (e) {
+      out.transport = transport;
+      out.sdk = {
+        ok: false,
+        code: (e && e.code) || 'failed',
+        message: String((e && e.message) || e).slice(0, 400)
+      };
+    }
+    out.lastError = MMB.db.sync.lastError || null;
+    return out;
+  }
+
   MMB.sync = {
     push: push,
     fetch: fetchAll,
+    test: testConnection,
     busy: function () { return busy; },
     // fetch() keeps the busy flag on success so the header button can spin
     // until the caller has repainted. Call this after the repaint.

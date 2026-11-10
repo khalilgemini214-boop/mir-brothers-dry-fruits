@@ -183,7 +183,9 @@
         '<div class="setting-row"><div class="si blue">' + MMB.icon('globe') + '</div><div class="setting-label"><div class="st">' + MMB.esc((MMB.cloud && MMB.cloud.email()) || '—') + '</div><div class="ss">' + t('settings.signedInEmail') + '</div></div>' +
         '<div class="setting-control"><button class="btn btn-sm btn-ghost" id="signOutBtn">' + MMB.icon('lock') + t('settings.signOut') + '</button></div></div>' +
         '<div class="setting-row"><div class="si gold">' + MMB.icon('refresh') + '</div><div class="setting-label"><div class="st" id="cloudPending">' + t('settings.cloudPending') + ' · ' + pendingCloud + '</div><div class="ss">' + t('sync.lastFetched', { time: lastFetched }) + (lastSyncMs ? ' · ' + t('settings.lastSyncTime', { time: (lastSyncMs / 1000).toFixed(1) + 's' }) : '') + '</div></div>' +
-        '<div class="setting-control"><button class="btn btn-sm btn-ghost" id="resyncBtn">' + t('settings.resync') + '</button></div></div>' +
+        '<div class="setting-control" style="display:flex;gap:6px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm btn-ghost" id="testConnBtn">' + t('settings.testConnection') + '</button>' +
+        '<button class="btn btn-sm btn-ghost" id="resyncBtn">' + t('settings.resync') + '</button></div></div>' +
         (lastSyncError
           ? '<div class="setting-row" style="display:block"><div class="setting-label"><div class="st" style="color:var(--red)">' + t('settings.lastError') + ' · ' + MMB.esc(lastSyncError.code || '') + '</div><div class="ss">' + MMB.esc(lastSyncError.message || '') + '</div></div></div>'
           : '') +
@@ -342,6 +344,25 @@
       if (removeBtn) removeBtn.addEventListener('click', function () { openPinModal('remove'); });
 
       /* cloud */
+      const testConnBtn = root.querySelector('#testConnBtn');
+      if (testConnBtn) testConnBtn.addEventListener('click', function () {
+        MMB.openSheet({
+          title: t('settings.testConnection'),
+          body: '<div class="hint">' + t('settings.testConnectionHint') + '</div>' +
+            '<pre id="connOut" style="white-space:pre-wrap;font-size:11px;margin-top:12px;max-height:45vh;overflow:auto">…</pre>',
+          footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button>',
+          onMount: async function (el) {
+            const out = el.querySelector('#connOut');
+            try {
+              const r = await MMB.sync.test();
+              out.textContent = JSON.stringify(r, null, 2);
+            } catch (e) {
+              out.textContent = String((e && e.message) || e);
+            }
+          }
+        });
+      });
+
       const resyncBtn = root.querySelector('#resyncBtn');
       if (resyncBtn) resyncBtn.addEventListener('click', async function () {
         const ok = await MMB.confirm({

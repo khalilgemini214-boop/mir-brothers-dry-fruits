@@ -287,6 +287,8 @@
     'settings.cloudPending': 'Pending changes', 'settings.resync': 'Full resync',
     'settings.resyncBody': 'Fetch every record from Firestore again? Nothing is uploaded, and local changes are kept.',
     'settings.lastSyncTime': 'Last sync: {time}', 'settings.lastError': 'Last sync error',
+    'settings.testConnection': 'Test connection',
+    'settings.testConnectionHint': 'Sends one direct HTTPS request to Firestore and shows the real HTTP result. If Fetch still fails, send this text.',
 
     'sync.sync': 'Sync', 'sync.fetch': 'Fetch',
     'sync.syncing': 'Syncing…', 'sync.fetching': 'Fetching…',
@@ -591,6 +593,8 @@
     'settings.cloudPending': 'بقایا تبدیلیاں', 'settings.resync': 'مکمل دوبارہ حصول',
     'settings.resyncBody': 'فائربیس سے تمام ریکارڈ دوبارہ حاصل کریں؟ کچھ اپ لوڈ نہیں ہوگا اور مقامی تبدیلیاں محفوظ رہیں گی۔',
     'settings.lastSyncTime': 'آخری سنک: {time}', 'settings.lastError': 'آخری سنک کی خرابی',
+    'settings.testConnection': 'کنکشن ٹیسٹ',
+    'settings.testConnectionHint': 'فائربیس کے فائر اسٹور کو ایک براہِ راست HTTPS درخواست بھیج کر اصل HTTP نتیجہ دکھاتا ہے۔ اگر حصول ناکام رہے تو یہ متن بھیجیں۔',
 
     'sync.sync': 'سنک', 'sync.fetch': 'حاصل کریں',
     'sync.syncing': 'سنک ہو رہا ہے…', 'sync.fetching': 'حاصل ہو رہا ہے…',

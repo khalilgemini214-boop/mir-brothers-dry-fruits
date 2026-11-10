@@ -1,6 +1,6 @@
 {
-  "version": "1.1.4",
-  "versionCode": 10,
+  "version": "1.1.5",
+  "versionCode": 11,
   "minNativeVersion": "1.0.4",
-  "notes": "Android Firestore now uses long polling (fixes 'unavailable' on some WebViews), and the real sync error is shown in Settings -> Cloud."
+  "notes": "Adds Settings -> Cloud -> Test connection: a direct HTTPS Firestore check plus the SDK check, so the real failure (database, rules, network or transport) is visible."
 }
