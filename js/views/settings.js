@@ -94,6 +94,7 @@
       const bytes = MMB.storageBytes();
       const pendingCloud = MMB.pendingCount ? MMB.pendingCount() : 0;
       const lastSyncMs = Number(MMB.db.sync && MMB.db.sync.lastSyncMs) || 0;
+      const lastSyncError = MMB.db.sync && MMB.db.sync.lastError;
       const lastFetched = (function () {
         if (!MMB.sync || !MMB.sync.lastFetchedISO) return t('sync.never');
         const iso = MMB.sync.lastFetchedISO();
@@ -183,6 +184,9 @@
         '<div class="setting-control"><button class="btn btn-sm btn-ghost" id="signOutBtn">' + MMB.icon('lock') + t('settings.signOut') + '</button></div></div>' +
         '<div class="setting-row"><div class="si gold">' + MMB.icon('refresh') + '</div><div class="setting-label"><div class="st" id="cloudPending">' + t('settings.cloudPending') + ' · ' + pendingCloud + '</div><div class="ss">' + t('sync.lastFetched', { time: lastFetched }) + (lastSyncMs ? ' · ' + t('settings.lastSyncTime', { time: (lastSyncMs / 1000).toFixed(1) + 's' }) : '') + '</div></div>' +
         '<div class="setting-control"><button class="btn btn-sm btn-ghost" id="resyncBtn">' + t('settings.resync') + '</button></div></div>' +
+        (lastSyncError
+          ? '<div class="setting-row" style="display:block"><div class="setting-label"><div class="st" style="color:var(--red)">' + t('settings.lastError') + ' · ' + MMB.esc(lastSyncError.code || '') + '</div><div class="ss">' + MMB.esc(lastSyncError.message || '') + '</div></div></div>'
+          : '') +
         '</div></section>' +
 
         /* data */

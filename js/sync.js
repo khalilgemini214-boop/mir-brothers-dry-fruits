@@ -14,6 +14,15 @@
     if (!fs) {
       if (!window.firebase || !firebase.firestore) throw new Error('firebase-unavailable');
       fs = firebase.firestore();
+      // Firestore's default streaming transport can fail inside an Android
+      // WebView (especially behind some Wi-Fi networks). Long polling is the
+      // supported fallback and works there.
+      const native = (MMB.isNativeApp && MMB.isNativeApp()) ||
+        !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+      if (native && fs.settings) {
+        try { fs.settings({ experimentalForceLongPolling: true }); }
+        catch (e) { console.warn('Firestore long-polling setting failed', e); }
+      }
     }
     return fs;
   }
@@ -184,10 +193,16 @@
     } catch (e) {
       console.error('Push failed', e);
       MMB.db.sync.lastSyncMs = Date.now() - startedAt;
+      MMB.db.sync.lastError = {
+        code: (e && e.code) || 'failed',
+        message: String((e && e.message) || e || '').slice(0, 400),
+        at: new Date().toISOString(),
+        op: 'push'
+      };
       MMB.save({ origin: 'remote' });
       setBusy(null);
       fail(e);
-      return { ok: false, error: e && e.code || 'failed', pending: MMB.pendingCount() };
+      return { ok: false, error: e && e.code || 'failed', message: e && e.message, pending: MMB.pendingCount() };
     }
   }
 
@@ -329,6 +344,7 @@
       next.sync.lastFetchedAt = new Date().toISOString();
       next.sync.lastFetchMs = Date.now() - startedAt;
       next.sync.lastFetchChanges = changes;
+      next.sync.lastError = null;
       const discarded = next.sync.discarded || 0;
       delete next.sync.discarded;
 
@@ -347,9 +363,16 @@
       return { ok: true, fetched: changes, discarded: discarded, keys: changedKeys };
     } catch (e) {
       console.error('Fetch failed', e);
+      MMB.db.sync.lastError = {
+        code: (e && e.code) || 'failed',
+        message: String((e && e.message) || e || '').slice(0, 400),
+        at: new Date().toISOString(),
+        op: 'fetch'
+      };
+      MMB.save({ origin: 'remote' });
       setBusy(null);
       fail(e);
-      return { ok: false, error: e && e.code || 'failed' };
+      return { ok: false, error: e && e.code || 'failed', message: e && e.message };
     }
   }
 

@@ -330,7 +330,9 @@
   function syncErrorText(code) {
     if (code === 'not-signed-in') return t('sync.notSignedIn');
     if (code === 'permission-denied') return t('sync.denied');
-    if (code === 'unavailable') return t('sync.offline');
+    if (code === 'unavailable') return t('sync.unreachable');
+    if (code === 'failed-precondition' || code === 'not-found') return t('sync.setupProblem');
+    if (code && code !== 'failed' && code !== 'busy') return t('sync.failedCode', { code: code });
     return t('sync.failed');
   }
 
