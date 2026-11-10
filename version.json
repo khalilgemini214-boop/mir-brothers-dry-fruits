@@ -1,6 +1,6 @@
 {
   "version": "1.2.0",
   "versionCode": 14,
-  "minNativeVersion": "1.0.4",
-  "notes": "Android Sync/Fetch now use the Firestore REST API directly, bypassing the WebView SDK's false offline state. Same records, tombstones and server timestamps; connection test shows transport: rest on Android."
+  "minNativeVersion": "1.2.0",
+  "notes": "Android Sync/Fetch use the Firestore REST API directly. Older APKs should update from the in-app 'Download new app' button."
 }
