@@ -176,7 +176,7 @@
     return type === 'debit' ? t('ledger.debitSub') : t('ledger.creditSub');
   }
 
-  function openEntryForm(account, type, entry) {
+  function renderEntryPage(root, account, type, entry) {
     const editing = !!entry;
     const pair = entry ? MMB.entryPair(entry) : null;
     let partyId = pair ? pair.accountId : null;
@@ -206,108 +206,83 @@
 
     const title = editing ? t('ledger.editTitle') : (type === 'credit' ? t('ledger.newCredit') : t('ledger.newDebit'));
 
-    function bind(el, close) {
-      const amountEl = el.querySelector('#leAmount');
-      const detailsEl = el.querySelector('#leDetails');
-      const dateEl = el.querySelector('#leDate');
-      const timeEl = el.querySelector('#leTime');
-      const partyEl = el.querySelector('#leParty');
-      const effectEl = el.querySelector('#leEffect');
+    root.innerHTML =
+      '<div class="page-head ledger-head"><div class="row-flex" style="gap:10px;align-items:center">' +
+      '<button class="icon-btn" id="entryBack" aria-label="' + MMB.esc(t('common.back')) + '">' + MMB.icon('back') + '</button>' +
+      '<div><div class="row-title" style="font-family:var(--font-display);font-weight:600;letter-spacing:-.02em">' + title + '</div>' +
+      '<div class="row-sub"><span class="badge ' + TYPE_BADGE[account.type] + '">' + t('accounts.type.' + account.type) + '</span>' +
+      '<span class="sep"></span><span>' + MMB.esc(account.name) + '</span></div></div></div></div>' +
+      '<div class="card card-pad" id="ledgerEntryPage">' +
+      body +
+      '<div class="row-flex gap-8" style="margin-top:16px">' +
+      '<button type="button" class="btn btn-ghost" id="leCancel">' + t('common.cancel') + '</button>' +
+      '<button type="button" class="btn btn-primary" id="leSave">' + MMB.icon('check') + (editing ? t('common.save') : t('ledger.saveEntry')) + '</button></div>' +
+      '</div>';
 
-      function updateEffect() {
-        const amt = MMB.num(amountEl.value);
-        const sign = MMB.entrySign(account, type);
-        const after = currentBalance + sign * amt;
-        const balLabel = account.type === 'expense' ? t('accounts.balance.expense') : t('ledger.summary.balance');
-        effectEl.innerHTML =
-          '<div class="total-row"><span>' + t('ledger.currentBalance') + '</span><span class="v">' + MMB.money(currentBalance) + '</span></div>' +
-          '<div class="total-row"><span>' + typeSub(account, type) + '</span><span class="v">' + (sign >= 0 ? '+' : '−') + MMB.money(amt) + '</span></div>' +
-          '<div class="total-row grand"><span>' + t('ledger.afterEntry') + '</span><span class="v ' + (after >= 0 ? '' : 'negative') + '">' + MMB.money(after) + '</span></div>';
-      }
-      updateEffect();
-      amountEl.addEventListener('input', updateEffect);
+    const el = root.querySelector('#ledgerEntryPage');
+    const back = function () { MMB.navigate('account/' + account.id); };
 
-      function bindParty() {
-        const open = partyEl.querySelector('[data-open-party]');
-        const remove = partyEl.querySelector('[data-remove-party]');
-        if (open) open.addEventListener('click', function (e) {
-          if (e.target.closest('[data-remove-party]')) return;
-          MMB.openAccountPicker({
-            excludeId: account.id,
-            selectedId: partyId,
-            onPick: function (a) {
-              partyId = a.id;
-              partyEl.innerHTML = partyChip();
-              bindParty();
-            }
-          });
+    const amountEl = el.querySelector('#leAmount');
+    const detailsEl = el.querySelector('#leDetails');
+    const dateEl = el.querySelector('#leDate');
+    const timeEl = el.querySelector('#leTime');
+    const partyEl = el.querySelector('#leParty');
+    const effectEl = el.querySelector('#leEffect');
+
+    function updateEffect() {
+      const amt = MMB.num(amountEl.value);
+      const sign = MMB.entrySign(account, type);
+      const after = currentBalance + sign * amt;
+      effectEl.innerHTML =
+        '<div class="total-row"><span>' + t('ledger.currentBalance') + '</span><span class="v">' + MMB.money(currentBalance) + '</span></div>' +
+        '<div class="total-row"><span>' + typeSub(account, type) + '</span><span class="v">' + (sign >= 0 ? '+' : '−') + MMB.money(amt) + '</span></div>' +
+        '<div class="total-row grand"><span>' + t('ledger.afterEntry') + '</span><span class="v ' + (after >= 0 ? '' : 'negative') + '">' + MMB.money(after) + '</span></div>';
+    }
+    updateEffect();
+    amountEl.addEventListener('input', updateEffect);
+
+    function bindParty() {
+      const open = partyEl.querySelector('[data-open-party]');
+      const remove = partyEl.querySelector('[data-remove-party]');
+      if (open) open.addEventListener('click', function (e) {
+        if (e.target.closest('[data-remove-party]')) return;
+        MMB.openAccountPicker({
+          excludeId: account.id,
+          selectedId: partyId,
+          onPick: function (a) {
+            partyId = a.id;
+            partyEl.innerHTML = partyChip();
+            bindParty();
+          }
         });
-        if (remove) remove.addEventListener('click', function (e) {
-          e.stopPropagation();
-          partyId = null;
-          partyEl.innerHTML = partyChip();
-          bindParty();
-        });
-      }
-      bindParty();
-
-      el.querySelector('#leSave').addEventListener('click', function () {
-        const amt = MMB.num(amountEl.value);
-        if (!(amt > 0)) { amountEl.focus(); amountEl.classList.add('shake'); setTimeout(function () { amountEl.classList.remove('shake'); }, 400); return; }
-        const payload = {
-          accountId: account.id, type: type, amount: amt,
-          details: detailsEl.value.trim(), date: dateEl.value, time: timeEl.value,
-          partyId: partyId
-        };
-        const res = editing ? MMB.updateEntry(entry.id, payload) : MMB.addEntry(payload);
-        if (!res.ok) { MMB.toast(t('common.error'), 'error'); return; }
-        MMB.toast(editing ? t('common.saved') : t('ledger.entrySaved'));
-        close();
-        MMB.rerender();
+      });
+      if (remove) remove.addEventListener('click', function (e) {
+        e.stopPropagation();
+        partyId = null;
+        partyEl.innerHTML = partyChip();
+        bindParty();
       });
     }
+    bindParty();
 
-    // The ledger has an inline section; keep the sheet only as a fallback for
-    // any caller outside the ledger page.
-    const host = document.getElementById('ledgerEntryHost');
-    if (host) {
-      host.innerHTML =
-        '<div class="row-flex" style="justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">' +
-        '<div><div class="section-title" style="margin:0">' + title + '</div>' +
-        '<div class="micro">' + MMB.esc(account.name) + ' · ' + typeLabel(account, type) + '</div></div>' +
-        '<button type="button" class="icon-btn sm" id="leClose" aria-label="' + MMB.esc(t('common.close')) + '">' + MMB.icon('x') + '</button></div>' +
-        body +
-        '<div class="row-flex gap-8" style="margin-top:16px">' +
-        '<button type="button" class="btn btn-ghost" id="leCancel">' + t('common.cancel') + '</button>' +
-        '<button type="button" class="btn btn-primary" id="leSave">' + MMB.icon('check') + (editing ? t('common.save') : t('ledger.saveEntry')) + '</button></div>';
-      host.hidden = false;
-      // The sticky Credit/Debit bar would cover the form; the form has its
-      // own Save/Cancel buttons.
-      const sticky = document.querySelector('.ledger-sticky');
-      if (sticky) sticky.hidden = true;
-      const close = function () {
-        host.hidden = true;
-        host.innerHTML = '';
-        if (sticky) sticky.hidden = false;
+    el.querySelector('#leSave').addEventListener('click', function () {
+      const amt = MMB.num(amountEl.value);
+      if (!(amt > 0)) { amountEl.focus(); amountEl.classList.add('shake'); setTimeout(function () { amountEl.classList.remove('shake'); }, 400); return; }
+      const payload = {
+        accountId: account.id, type: type, amount: amt,
+        details: detailsEl.value.trim(), date: dateEl.value, time: timeEl.value,
+        partyId: partyId
       };
-      bind(host, close);
-      host.querySelector('#leClose').addEventListener('click', close);
-      host.querySelector('#leCancel').addEventListener('click', close);
-      try { host.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { /* ignore */ }
-      const amt = host.querySelector('#leAmount');
-      if (amt) amt.focus();
-      return;
-    }
-
-    MMB.openSheet({
-      title: title,
-      subtitle: MMB.esc(account.name) + ' · ' + typeLabel(account, type),
-      body: body,
-      footer: '<button class="btn btn-ghost" data-close>' + t('common.cancel') + '</button><button class="btn btn-primary" id="leSave">' + MMB.icon('check') + (editing ? t('common.save') : t('ledger.saveEntry')) + '</button>',
-      onMount: function (el, api) {
-        bind(el, function () { api.close(); });
-      }
+      const res = editing ? MMB.updateEntry(entry.id, payload) : MMB.addEntry(payload);
+      if (!res.ok) { MMB.toast(t('common.error'), 'error'); return; }
+      MMB.toast(editing ? t('common.saved') : t('ledger.entrySaved'));
+      back();
     });
+
+    root.querySelector('#entryBack').addEventListener('click', back);
+    root.querySelector('#leCancel').addEventListener('click', back);
+
+    if (amountEl) amountEl.focus();
   }
 
   function openEntryActions(entry) {
@@ -354,7 +329,7 @@
             const act = b.getAttribute('data-act');
             api.close();
             if (act === 'edit') {
-              setTimeout(function () { openEntryForm(MMB.account(entry.accountId), entry.type, entry); }, 120);
+              setTimeout(function () { MMB.navigate('account/' + entry.accountId + '/edit/' + entry.id); }, 120);
             } else if (act === 'del') {
               const pair = MMB.entryPair(entry);
               const ok = await MMB.confirm({
@@ -462,8 +437,6 @@
       '<div class="card"><div class="k">' + t('ledger.summary.balance') + '</div><div class="v num">' + MMB.money(balance) + '</div></div>' +
       '</div>' +
 
-      '<section class="card card-pad" id="ledgerEntryHost" hidden style="margin-bottom:10px;scroll-margin-top:84px"></section>' +
-
       '<div class="ledger-filters"><span class="micro">' + (entries.length === 1 ? t('ledger.entryCountOne') : t('ledger.entryCount', { n: entries.length })) + '</span>' +
       '<div class="sort-toggle" id="ledgerSort"><button data-sort="newest" class="' + (sort === 'newest' ? 'active' : '') + '">' + t('common.newest') + '</button><button data-sort="oldest" class="' + (sort === 'oldest' ? 'active' : '') + '">' + t('common.oldest') + '</button></div></div>' +
 
@@ -520,7 +493,9 @@
       });
     });
     root.querySelectorAll('[data-entry-type]').forEach(function (b) {
-      b.addEventListener('click', function () { openEntryForm(account, b.getAttribute('data-entry-type')); });
+      b.addEventListener('click', function () {
+        MMB.navigate('account/' + account.id + '/' + b.getAttribute('data-entry-type'));
+      });
     });
   }
 
@@ -610,6 +585,16 @@
       '</div>';
   };
 
+  MMB.ledgerTypeLabel = typeLabel;
   MMB.views.accounts.renderLedger = function (root, id) { openLedger(root, id); };
-  MMB.openLedgerEntryForm = openEntryForm;
+  MMB.views.accounts.renderEntry = function (root, route) {
+    const account = MMB.account(route.accountId);
+    if (!account) { MMB.navigate('accounts'); return; }
+    const entry = route.entryId
+      ? MMB.db.ledger.find(function (e) { return e.id === route.entryId; })
+      : null;
+    if (route.entryId && !entry) { MMB.navigate('account/' + account.id); return; }
+    const type = entry ? entry.type : (route.type === 'debit' ? 'debit' : 'credit');
+    renderEntryPage(root, account, type, entry);
+  };
 })();

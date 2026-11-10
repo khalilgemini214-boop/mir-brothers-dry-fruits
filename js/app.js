@@ -23,7 +23,15 @@
     const parts = h.split('?')[0].split('/').filter(Boolean);
     if (!parts.length) return { name: 'dashboard' };
     if (parts[0] === 'accounts') return { name: 'accounts' };
-    if (parts[0] === 'account' && parts[1]) return { name: 'account', id: parts[1] };
+    if (parts[0] === 'account' && parts[1]) {
+      if (parts[2] === 'credit' || parts[2] === 'debit') {
+        return { name: 'ledgerEntry', accountId: parts[1], type: parts[2] };
+      }
+      if (parts[2] === 'edit' && parts[3]) {
+        return { name: 'ledgerEntry', accountId: parts[1], entryId: parts[3] };
+      }
+      return { name: 'account', id: parts[1] };
+    }
     if (parts[0] === 'stock') return { name: 'stock', tab: parts[1] === 'out' ? 'out' : 'in' };
     if (parts[0] === 'sale') return { name: 'saleForm', id: parts[1] && parts[1] !== 'new' ? parts[1] : null };
     if (parts[0] === 'purchase') return { name: 'purchaseForm', id: parts[1] && parts[1] !== 'new' ? parts[1] : null };
@@ -32,7 +40,7 @@
   }
 
   function setNav(route) {
-    const key = route.name === 'account' ? 'accounts'
+    const key = (route.name === 'account' || route.name === 'ledgerEntry') ? 'accounts'
       : (route.name === 'saleForm' || route.name === 'purchaseForm') ? 'stock'
         : route.name;
     document.querySelectorAll('[data-nav]').forEach(function (a) {
@@ -50,6 +58,14 @@
       const a = MMB.account(route.id);
       title = a ? a.name : t('accounts.title');
       sub = a ? t('accounts.type.' + a.type) + (a.phone ? ' · ' + a.phone : '') : '';
+    } else if (route.name === 'ledgerEntry') {
+      const a = MMB.account(route.accountId);
+      const entry = route.entryId
+        ? MMB.db.ledger.find(function (e) { return e.id === route.entryId; })
+        : null;
+      const type = entry ? entry.type : (route.type === 'debit' ? 'debit' : 'credit');
+      title = entry ? t('ledger.editTitle') : (type === 'credit' ? t('ledger.newCredit') : t('ledger.newDebit'));
+      sub = a ? a.name + ' · ' + (MMB.ledgerTypeLabel ? MMB.ledgerTypeLabel(a, type) : t('ledger.' + type)) : '';
     } else if (route.name === 'stock') {
       title = t('stock.title');
       sub = route.tab === 'out' ? t('stock.outDesc') : t('stock.inDesc');
@@ -77,12 +93,13 @@
     MMB.setFAB('');
     setNav(route);
     setTopbar(route);
-    document.body.classList.toggle('mmb-ledger', route.name === 'account');
+    document.body.classList.toggle('mmb-ledger', route.name === 'account' || route.name === 'ledgerEntry');
     const view = document.getElementById('view');
     if (!view) return;
     if (scrollTop) window.scrollTo({ top: 0, behavior: 'auto' });
     try {
       if (route.name === 'account') MMB.views.accounts.renderLedger(view, route.id);
+      else if (route.name === 'ledgerEntry') MMB.views.accounts.renderEntry(view, route);
       else MMB.views[route.name].render(view, route);
       MMB.applyI18n(view);
       if (scrollTop) requestAnimationFrame(function () { window.scrollTo(0, 0); });
@@ -257,7 +274,8 @@
       if (authScreen && !authScreen.hidden) return;
       if (MMB.hasOverlay()) { MMB.closeTop(); return; }
       const route = parseRoute();
-      if (route.name === 'account') MMB.navigate('accounts');
+      if (route.name === 'ledgerEntry') MMB.navigate('account/' + route.accountId);
+      else if (route.name === 'account') MMB.navigate('accounts');
       else if (route.name === 'saleForm') MMB.navigate('stock/out');
       else if (route.name === 'purchaseForm') MMB.navigate('stock/in');
       else if (route.name !== 'dashboard') MMB.navigate('dashboard');
@@ -321,9 +339,7 @@
   function safeRerender() {
     if (MMB.hasOverlay && MMB.hasOverlay()) return;
     const route = parseRoute();
-    if (route.name === 'saleForm' || route.name === 'purchaseForm') return;
-    const entry = document.getElementById('ledgerEntryHost');
-    if (entry && !entry.hidden) return;
+    if (route.name === 'saleForm' || route.name === 'purchaseForm' || route.name === 'ledgerEntry') return;
     if (appStarted) renderCurrent(false);
   }
 
