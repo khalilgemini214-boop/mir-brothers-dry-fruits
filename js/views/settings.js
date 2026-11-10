@@ -93,6 +93,7 @@
       const lastBackup = st.backupLastAt ? MMB.fmtDate(st.backupLastAt.slice(0, 10)) : t('settings.never');
       const bytes = MMB.storageBytes();
       const pendingCloud = MMB.pendingCount ? MMB.pendingCount() : 0;
+      const lastSyncMs = Number(MMB.db.sync && MMB.db.sync.lastSyncMs) || 0;
       const lastFetched = (function () {
         if (!MMB.sync || !MMB.sync.lastFetchedISO) return t('sync.never');
         const iso = MMB.sync.lastFetchedISO();
@@ -180,7 +181,7 @@
         '<div class="settings-card">' +
         '<div class="setting-row"><div class="si blue">' + MMB.icon('globe') + '</div><div class="setting-label"><div class="st">' + MMB.esc((MMB.cloud && MMB.cloud.email()) || '—') + '</div><div class="ss">' + t('settings.signedInEmail') + '</div></div>' +
         '<div class="setting-control"><button class="btn btn-sm btn-ghost" id="signOutBtn">' + MMB.icon('lock') + t('settings.signOut') + '</button></div></div>' +
-        '<div class="setting-row"><div class="si gold">' + MMB.icon('refresh') + '</div><div class="setting-label"><div class="st">' + t('settings.cloudPending') + ' · ' + pendingCloud + '</div><div class="ss">' + t('sync.lastFetched', { time: lastFetched }) + '</div></div>' +
+        '<div class="setting-row"><div class="si gold">' + MMB.icon('refresh') + '</div><div class="setting-label"><div class="st" id="cloudPending">' + t('settings.cloudPending') + ' · ' + pendingCloud + '</div><div class="ss">' + t('sync.lastFetched', { time: lastFetched }) + (lastSyncMs ? ' · ' + t('settings.lastSyncTime', { time: (lastSyncMs / 1000).toFixed(1) + 's' }) : '') + '</div></div>' +
         '<div class="setting-control"><button class="btn btn-sm btn-ghost" id="resyncBtn">' + t('settings.resync') + '</button></div></div>' +
         '</div></section>' +
 
@@ -234,15 +235,48 @@
         const f = logoFile.files && logoFile.files[0];
         if (!f) return;
         if (f.size > 600 * 1024) { MMB.toast(t('settings.logoTooBig'), 'error'); return; }
-        const reader = new FileReader();
-        reader.onload = function () {
-          MMB.db.settings.shop.logo = String(reader.result);
+
+        function useLogo(data) {
+          MMB.db.settings.shop.logo = data;
           MMB.save();
           const prev = root.querySelector('#logoPreview');
           if (prev) prev.innerHTML = '<img src="' + MMB.db.settings.shop.logo + '" style="width:100%;height:100%;object-fit:cover;border-radius:14px" alt="">';
           const rm = root.querySelector('#logoRemove');
           if (rm) rm.style.display = '';
           MMB.toast(t('common.saved'));
+        }
+
+        const reader = new FileReader();
+        reader.onload = function () {
+          const src = String(reader.result);
+          if (f.type === 'image/svg+xml' || !window.Image || !document.createElement('canvas').getContext) {
+            useLogo(src);
+            return;
+          }
+          // A 600 KB logo becomes an 800 KB base64 string that is rewritten
+          // on every save and uploaded on the first sync. Shrink it to a
+          // 320 px image, usually 20-40 KB, before storing it.
+          const img = new Image();
+          img.onload = function () {
+            try {
+              const max = 320;
+              const scale = Math.min(1, max / Math.max(img.width, img.height));
+              const w = Math.max(1, Math.round(img.width * scale));
+              const h = Math.max(1, Math.round(img.height * scale));
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+              let out = '';
+              try { out = canvas.toDataURL('image/webp', 0.85); } catch (e) { out = ''; }
+              if (!out || out.indexOf('data:image/webp') !== 0) out = canvas.toDataURL('image/png');
+              useLogo(out && out.length < src.length ? out : src);
+            } catch (e) {
+              useLogo(src);
+            }
+          };
+          img.onerror = function () { useLogo(src); };
+          img.src = src;
         };
         reader.readAsDataURL(f);
       });

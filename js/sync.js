@@ -68,6 +68,7 @@
   async function push() {
     if (busy) return { ok: false, error: 'busy' };
     setBusy('pushing');
+    const startedAt = Date.now();
     let pushed = 0;
     try {
       requireReady();
@@ -101,8 +102,12 @@
         pushed++;
       }
 
-      for (let i = 0; i < keys.length; i += CHUNK) {
-        const chunk = keys.slice(i, i + CHUNK);
+      const chunks = [];
+      for (let i = 0; i < keys.length; i += CHUNK) chunks.push(keys.slice(i, i + CHUNK));
+
+      let firstError = null;
+      async function commitChunk(chunk) {
+        if (firstError) return;
         const batch = db.batch();
         const applied = [];
         let wrote = false;
@@ -136,22 +141,49 @@
           }
           applied.push({ key: key, at: entry.at });
         });
-        if (!applied.length) continue;
-        if (wrote) await batch.commit();
+        if (!applied.length) return;
+        try {
+          if (wrote) await batch.commit();
+        } catch (e) {
+          firstError = e;
+          throw e;
+        }
         applied.forEach(function (a) {
           const cur = MMB.db.sync.dirty[a.key];
           if (cur && cur.at === a.at) delete MMB.db.sync.dirty[a.key];
         });
         pushed += applied.length;
-        MMB.save({ origin: 'remote' });
+        // Keep the cleared entries in memory only. One localStorage write at
+        // the end is enough; a crash re-sends the remaining entries, which is
+        // idempotent.
+        if (MMB.onSyncChange) MMB.onSyncChange();
         if (MMB.onSyncState) MMB.onSyncState('pushing');
       }
 
+      // Three batches in flight hides mobile round-trip latency. Batches never
+      // overlap on a record, so ordering between them does not matter.
+      const queue = chunks.slice();
+      const workers = [];
+      const parallel = Math.min(3, queue.length);
+      for (let w = 0; w < parallel; w++) {
+        workers.push((async function () {
+          while (queue.length && !firstError) {
+            await commitChunk(queue.shift());
+          }
+        })());
+      }
+      const settled = await Promise.allSettled(workers);
+      const rejected = settled.find(function (r) { return r.status === 'rejected'; });
+      if (rejected) throw rejected.reason;
+
       MMB.db.sync.lastSyncedAt = new Date().toISOString();
+      MMB.db.sync.lastSyncMs = Date.now() - startedAt;
+      MMB.db.sync.lastSyncRecords = pushed;
       finish();
       return { ok: true, pushed: pushed, transactions: transactions };
     } catch (e) {
       console.error('Push failed', e);
+      MMB.db.sync.lastSyncMs = Date.now() - startedAt;
       MMB.save({ origin: 'remote' });
       setBusy(null);
       fail(e);
@@ -213,6 +245,7 @@
   async function fetchAll() {
     if (busy) return { ok: false, error: 'busy' };
     setBusy('fetching');
+    const startedAt = Date.now();
     try {
       requireReady();
       const db = getDb();
@@ -294,6 +327,8 @@
         next.sync.lastFetchedServerAt = toStore(maxTs);
       }
       next.sync.lastFetchedAt = new Date().toISOString();
+      next.sync.lastFetchMs = Date.now() - startedAt;
+      next.sync.lastFetchChanges = changes;
       const discarded = next.sync.discarded || 0;
       delete next.sync.discarded;
 

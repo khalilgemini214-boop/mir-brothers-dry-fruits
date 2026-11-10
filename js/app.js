@@ -288,6 +288,8 @@
     }
     const syncBtn = document.getElementById('syncBtn');
     if (syncBtn) syncBtn.classList.toggle('has-pending', n > 0);
+    const cloudPending = document.getElementById('cloudPending');
+    if (cloudPending) cloudPending.textContent = t('settings.cloudPending') + ' · ' + n;
     const stamp = document.getElementById('syncStamp');
     if (stamp) {
       const iso = (MMB.sync && MMB.sync.lastFetchedISO) ? MMB.sync.lastFetchedISO() : null;
@@ -335,6 +337,9 @@
   async function doSync() {
     if (!MMB.sync || MMB.sync.busy()) return;
     if (!navigator.onLine) { MMB.toast(t('sync.offline'), 'error'); return; }
+    if (!MMB.db.sync.lastSyncedAt && MMB.pendingCount() > 20) {
+      MMB.toast(t('sync.firstSync'), 'gold');
+    }
     const res = await MMB.sync.push();
     if (!res || !res.ok) {
       if (res && res.error === 'busy') return;
@@ -342,7 +347,7 @@
       return;
     }
     refreshSyncUI();
-    safeRerender();
+    // A push does not change local data, so there is nothing to repaint.
     if (res.empty || !res.pushed) MMB.toast(t('sync.upToDate'), 'gold');
     else MMB.toast(t('sync.synced', { n: Math.max(1, res.transactions != null ? res.transactions : res.pushed) }), 'gold');
   }
@@ -357,10 +362,11 @@
       return;
     }
     refreshSyncUI();
-    safeRerender();
     if (res.discarded) MMB.toast(t('sync.deletedLocal', { n: res.discarded }), 'error');
     else if (res.fetched) MMB.toast(t('sync.fetched', { n: res.fetched }), 'gold');
     else MMB.toast(t('sync.upToDate'), 'gold');
+    // Let the toast paint, then repaint the screen with the new data.
+    requestAnimationFrame(function () { setTimeout(safeRerender, 0); });
   }
 
   /* ── auth gate ────────────────────────────────────────────── */

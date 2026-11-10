@@ -286,6 +286,7 @@
     'settings.signedInEmail': 'Signed in', 'settings.signOut': 'Sign out',
     'settings.cloudPending': 'Pending changes', 'settings.resync': 'Full resync',
     'settings.resyncBody': 'Fetch every record from Firestore again? Nothing is uploaded, and local changes are kept.',
+    'settings.lastSyncTime': 'Last sync: {time}',
 
     'sync.sync': 'Sync', 'sync.fetch': 'Fetch',
     'sync.syncing': 'Syncing…', 'sync.fetching': 'Fetching…',
@@ -298,6 +299,7 @@
     'sync.denied': 'Firestore denied access. Check the security rules and the signed-in account.',
     'sync.deletedLocal': '{n} local edit(s) were removed because another device deleted the record.',
     'sync.pending': '{n} unsynced',
+    'sync.firstSync': 'First sync uploads the whole shop. Keep the app open until it finishes.',
     'sync.signOutPending': 'You have {n} unsynced changes. Sync them before signing out if you want them in the cloud.'
   };
 
@@ -585,6 +587,7 @@
     'settings.signedInEmail': 'سائن ان', 'settings.signOut': 'سائن آؤٹ',
     'settings.cloudPending': 'بقایا تبدیلیاں', 'settings.resync': 'مکمل دوبارہ حصول',
     'settings.resyncBody': 'فائربیس سے تمام ریکارڈ دوبارہ حاصل کریں؟ کچھ اپ لوڈ نہیں ہوگا اور مقامی تبدیلیاں محفوظ رہیں گی۔',
+    'settings.lastSyncTime': 'آخری سنک: {time}',
 
     'sync.sync': 'سنک', 'sync.fetch': 'حاصل کریں',
     'sync.syncing': 'سنک ہو رہا ہے…', 'sync.fetching': 'حاصل ہو رہا ہے…',
@@ -597,6 +600,7 @@
     'sync.denied': 'فائربیس نے رسائی سے انکار کر دیا۔ سیکیورٹی رولز اور سائن ان اکاؤنٹ چیک کریں۔',
     'sync.deletedLocal': '{n} مقامی تبدیلیاں ہٹا دی گئیں کیونکہ کسی دوسرے ڈیوائس نے ریکارڈ حذف کیا۔',
     'sync.pending': '{n} غیر سنک شدہ',
+    'sync.firstSync': 'پہلی سنک پوری دکان اپ لوڈ کرتی ہے۔ مکمل ہونے تک ایپ کھلی رکھیں۔',
     'sync.signOutPending': 'آپ کے {n} غیر سنک شدہ ریکارڈ موجود ہیں۔ سائن آؤٹ سے پہلے سنک کریں اگر آپ انہیں کلاؤڈ میں رکھنا چاہتے ہیں۔'
   };
 
