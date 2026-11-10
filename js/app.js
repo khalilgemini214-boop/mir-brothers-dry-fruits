@@ -322,6 +322,8 @@
     if (MMB.hasOverlay && MMB.hasOverlay()) return;
     const route = parseRoute();
     if (route.name === 'saleForm' || route.name === 'purchaseForm') return;
+    const entry = document.getElementById('ledgerEntryHost');
+    if (entry && !entry.hidden) return;
     if (appStarted) renderCurrent(false);
   }
 
@@ -485,10 +487,15 @@
     bindChrome();
     MMB.bindAuthScreen();
 
+    const hinted = !!(MMB.cloud.configured() && MMB.cloud.hasSessionHint && MMB.cloud.hasSessionHint());
     MMB.cloud.onChange(function (user, err) {
       if (user) startApp();
       else showAuth(err === 'unavailable' ? t('auth.unavailable') : '');
     });
+    // A persisted session should show the app immediately instead of waiting
+    // for Firebase's first auth callback. If the session is invalid, the
+    // callback below switches back to the login screen.
+    if (hinted) startApp();
     MMB.cloud.init();
 
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0 && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {

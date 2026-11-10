@@ -5,6 +5,7 @@
   const MMB = window.MMB;
   const CFG = window.MMB_FIREBASE || {};
   const LAST_EMAIL = 'mmb_last_email';
+  const SESSION_HINT = 'mmb_auth_hint';
 
   let app = null;
   let auth = null;
@@ -20,6 +21,17 @@
 
   function emit() {
     if (changeHandler) changeHandler(currentUser, lastError);
+  }
+
+  function hasSessionHint() {
+    try { return localStorage.getItem(SESSION_HINT) === '1'; } catch (e) { return false; }
+  }
+
+  function setSessionHint(on) {
+    try {
+      if (on) localStorage.setItem(SESSION_HINT, '1');
+      else localStorage.removeItem(SESSION_HINT);
+    } catch (e) { /* ignore */ }
   }
 
   function forceOnlineInWebView() {
@@ -59,6 +71,7 @@
       auth.onAuthStateChanged(function (user) {
         currentUser = user || null;
         lastError = null;
+        setSessionHint(!!currentUser);
         emit();
       }, function (e) {
         console.error('Auth state error', e);
@@ -80,10 +93,13 @@
     }
     if (persistence) { try { await persistence; } catch (e) { /* ignore */ } }
     lastError = null;
-    return auth.signInWithEmailAndPassword(email, password);
+    const cred = await auth.signInWithEmailAndPassword(email, password);
+    setSessionHint(true);
+    return cred;
   }
 
   async function signOut() {
+    setSessionHint(false);
     if (!auth) return;
     await auth.signOut();
   }
@@ -161,6 +177,7 @@
     email: function () { return currentUser ? (currentUser.email || '') : ''; },
     uid: function () { return currentUser ? currentUser.uid : ''; },
     signedIn: function () { return !!currentUser; },
+    hasSessionHint: hasSessionHint,
     onChange: function (fn) { changeHandler = fn; },
     lastError: function () { return lastError; },
     friendly: friendly
