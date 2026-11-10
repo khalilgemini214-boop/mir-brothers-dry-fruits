@@ -162,7 +162,8 @@ The app is still offline-first: localStorage is the working copy. The cloud is o
 **Behaviour**
 
 - **Sync** uploads the pending changes shown in its badge. A device that already had local data before this update queues all of it once, so the first Sync uploads the existing shop — this can take a while on mobile data because every bill, ledger row, account and product is one Firestore document. Later syncs only send changed records. Deletes are written as tombstones, never as Firestore `delete()` calls.
-- **Fetch** only reads. All records live in one `records` collection, so a fetch is a single consistent Firestore snapshot. It requests records whose `_serverUpdatedAt` is at or after the stored cursor and shows that server time in the header / Settings.
+- **Fetch** only reads. All records live in one `records` collection. It requests records whose `_serverUpdatedAt` is at or after the stored cursor and shows that server time in the header / Settings.
+- **Android transport:** inside the APK, Sync and Fetch use the Firestore **REST API** directly (the WebView's Firestore SDK can report itself offline even when requests work). The browser/PWA uses the normal SDK. Both read and write the same `records`/`meta` documents.
 - A record with pending local changes is never overwritten by Fetch. Another device's delete wins over a pending local edit (by design).
 - The bill and purchase counters are local to each device. Two devices creating bills offline can produce the same number; the list flags duplicates.
 - Full resync is in Settings → Cloud. It resets the cursor and fetches everything again; it never uploads.

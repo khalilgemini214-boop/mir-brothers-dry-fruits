@@ -1,6 +1,6 @@
 {
-  "version": "1.1.7",
-  "versionCode": 13,
+  "version": "1.2.0",
+  "versionCode": 14,
   "minNativeVersion": "1.0.4",
-  "notes": "Nudge Firestore's event-driven connectivity monitor after the client is created and when the WebView sends a false offline event. The connection test now shows whether the SDK read came from cache."
+  "notes": "Android Sync/Fetch now use the Firestore REST API directly, bypassing the WebView SDK's false offline state. Same records, tombstones and server timestamps; connection test shows transport: rest on Android."
 }

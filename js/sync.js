@@ -64,6 +64,193 @@
     return JSON.parse(JSON.stringify(rec));
   }
 
+  function isNativePlatform() {
+    return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  }
+
+  function restBase() {
+    const project = (window.MMB_FIREBASE && window.MMB_FIREBASE.projectId) || '';
+    return 'https://firestore.googleapis.com/v1/projects/' +
+      encodeURIComponent(project) + '/databases/(default)/documents';
+  }
+
+  function restDocName(path) {
+    const project = (window.MMB_FIREBASE && window.MMB_FIREBASE.projectId) || '';
+    return 'projects/' + project + '/databases/(default)/documents/' + path;
+  }
+
+  function timestampMs(value) {
+    if (!value) return 0;
+    const ms = Date.parse(value);
+    return isFinite(ms) ? ms : 0;
+  }
+
+  function msStamp(ms) {
+    return { seconds: Math.floor(ms / 1000), nanoseconds: Math.round((ms % 1000) * 1e6) };
+  }
+
+  function toRestValue(v) {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === 'string') return { stringValue: v };
+    if (typeof v === 'boolean') return { booleanValue: v };
+    if (typeof v === 'number') {
+      if (!isFinite(v)) return { nullValue: null };
+      return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    }
+    if (v instanceof Date) return { timestampValue: v.toISOString() };
+    if (Array.isArray(v)) return { arrayValue: { values: v.map(toRestValue) } };
+    if (typeof v === 'object') {
+      const fields = {};
+      Object.keys(v).forEach(function (k) {
+        if (v[k] !== undefined) fields[k] = toRestValue(v[k]);
+      });
+      return { mapValue: { fields: fields } };
+    }
+    return { nullValue: null };
+  }
+
+  function fromRestValue(v) {
+    if (!v) return null;
+    if (v.nullValue !== undefined) return null;
+    if (v.stringValue !== undefined) return v.stringValue;
+    if (v.booleanValue !== undefined) return v.booleanValue;
+    if (v.integerValue !== undefined) return Number(v.integerValue);
+    if (v.doubleValue !== undefined) return Number(v.doubleValue);
+    if (v.timestampValue !== undefined) return v.timestampValue;
+    if (v.arrayValue !== undefined) {
+      return ((v.arrayValue && v.arrayValue.values) || []).map(fromRestValue);
+    }
+    if (v.mapValue !== undefined) {
+      const fields = (v.mapValue && v.mapValue.fields) || {};
+      const out = {};
+      Object.keys(fields).forEach(function (k) { out[k] = fromRestValue(fields[k]); });
+      return out;
+    }
+    if (v.referenceValue !== undefined) return v.referenceValue;
+    if (v.geoPointValue !== undefined) return v.geoPointValue;
+    if (v.bytesValue !== undefined) return v.bytesValue;
+    return null;
+  }
+
+  function fromRestFields(fields) {
+    const out = {};
+    Object.keys(fields || {}).forEach(function (k) { out[k] = fromRestValue(fields[k]); });
+    return out;
+  }
+
+  function toRestFields(obj) {
+    const fields = {};
+    Object.keys(obj || {}).forEach(function (k) {
+      if (obj[k] !== undefined) fields[k] = toRestValue(obj[k]);
+    });
+    return fields;
+  }
+
+  async function authToken(force) {
+    if (!MMB.cloud.signedIn()) {
+      const e = new Error('not-signed-in');
+      e.code = 'not-signed-in';
+      throw e;
+    }
+    const user = window.firebase && firebase.auth ? firebase.auth().currentUser : null;
+    if (!user) {
+      const e = new Error('not-signed-in');
+      e.code = 'not-signed-in';
+      throw e;
+    }
+    return user.getIdToken(!!force);
+  }
+
+  function restErrorCode(status, json) {
+    const reason = json && json.error && json.error.status;
+    if (status === 401) return 'unauthenticated';
+    if (status === 403) return 'permission-denied';
+    if (status === 404) return 'not-found';
+    if (status === 400 && reason === 'FAILED_PRECONDITION') return 'failed-precondition';
+    if (status === 409) return 'aborted';
+    if (status === 429) return 'resource-exhausted';
+    if (status >= 500) return 'unavailable';
+    return 'unknown';
+  }
+
+  async function restFetch(url, token, opts) {
+    let res = null;
+    let text = '';
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(function () { controller.abort(); }, 30000) : null;
+    const method = (opts && opts.method) || 'GET';
+    const headers = { Authorization: 'Bearer ' + token };
+    // Match the GET that the connection test proved works: no extra headers
+    // on reads, JSON content type only when a body is sent.
+    if (method !== 'GET') headers['Content-Type'] = 'application/json';
+    try {
+      res = await fetch(url, Object.assign({
+        headers: headers,
+        signal: controller ? controller.signal : undefined
+      }, opts || {}));
+      text = await res.text();
+    } catch (e) {
+      const err = new Error('Network request failed: ' + ((e && e.message) || e));
+      err.code = 'unavailable';
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch (e) { /* ignore */ }
+    if (!res.ok) {
+      const err = new Error((json && json.error && json.error.message) || text || ('HTTP ' + res.status));
+      err.code = restErrorCode(res.status, json);
+      err.status = res.status;
+      throw err;
+    }
+    return json || {};
+  }
+
+  async function restGetUrl(url, token) {
+    try {
+      return await restFetch(url, token, { method: 'GET' });
+    } catch (e) {
+      if (e.status === 401) {
+        const fresh = await authToken(true);
+        return restFetch(url, fresh, { method: 'GET' });
+      }
+      throw e;
+    }
+  }
+
+  async function restGet(path, token) {
+    try {
+      return await restGetUrl(restBase() + '/' + path, token);
+    } catch (e) {
+      if (e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  async function restCommit(writes, token) {
+    if (!writes.length) return null;
+    const body = JSON.stringify({ writes: writes });
+    try {
+      return await restFetch(restBase() + ':commit', token, { method: 'POST', body: body });
+    } catch (e) {
+      if (e.status === 401) {
+        const fresh = await authToken(true);
+        return restFetch(restBase() + ':commit', fresh, { method: 'POST', body: body });
+      }
+      throw e;
+    }
+  }
+
+  function restWrite(path, fields) {
+    return {
+      update: { name: restDocName(path), fields: toRestFields(fields) },
+      updateTransforms: [
+        { fieldPath: '_serverUpdatedAt', setToServerValue: 'REQUEST_TIME' }
+      ]
+    };
+  }
+
   function toStore(ts) {
     return ts ? { seconds: ts.seconds, nanoseconds: ts.nanoseconds } : null;
   }
@@ -101,6 +288,103 @@
     if (MMB.onSyncState) MMB.onSyncState(null);
   }
 
+  /* ── push over REST (Android) ───────────────────────────────── */
+  async function pushViaRest(transactions, startedAt) {
+    const token = await authToken();
+    const deviceId = MMB.db.sync.deviceId;
+    let pushed = 0;
+    const keys = Object.keys(MMB.db.sync.dirty);
+    const settingsDirty = !!MMB.db.sync.dirtySettings;
+    const logoDirty = !!MMB.db.sync.dirtyLogo;
+    if (!keys.length && !settingsDirty && !logoDirty) {
+      finish();
+      return { ok: true, pushed: 0, empty: true };
+    }
+
+    if (logoDirty) {
+      await restCommit([restWrite('meta/branding', {
+        logo: MMB.db.settings.shop.logo || '',
+        _deviceId: deviceId
+      })], token);
+      MMB.db.sync.dirtyLogo = false;
+      MMB.db.sync.logoBase = MMB.recordHash({ logo: MMB.db.settings.shop.logo || '' });
+      pushed++;
+    }
+
+    if (settingsDirty) {
+      await restCommit([restWrite('meta/settings', Object.assign({}, MMB.sharedSettings(), {
+        _deviceId: deviceId
+      }))], token);
+      MMB.db.sync.dirtySettings = false;
+      pushed++;
+    }
+
+    const chunks = [];
+    for (let i = 0; i < keys.length; i += CHUNK) chunks.push(keys.slice(i, i + CHUNK));
+
+    let firstError = null;
+    async function commitChunk(chunk) {
+      if (firstError) return;
+      const writes = [];
+      const applied = [];
+      chunk.forEach(function (key) {
+        const idx = key.indexOf(':');
+        const name = key.slice(0, idx);
+        const id = key.slice(idx + 1);
+        const entry = MMB.db.sync.dirty[key];
+        if (!entry) return;
+        if (entry.op === 'del') {
+          writes.push(restWrite('records/' + id, {
+            _kind: name,
+            _tombstone: true,
+            _deletedAt: entry.at,
+            _deviceId: deviceId
+          }));
+        } else {
+          const rec = (MMB.db[name] || []).find(function (r) { return r.id === id; });
+          if (!rec) { applied.push({ key: key, at: entry.at }); return; }
+          writes.push(restWrite('records/' + id, Object.assign({}, clean(rec), {
+            _kind: name,
+            _deviceId: deviceId
+          })));
+        }
+        applied.push({ key: key, at: entry.at });
+      });
+      if (!writes.length && !applied.length) return;
+      try {
+        if (writes.length) await restCommit(writes, token);
+      } catch (e) {
+        firstError = e;
+        throw e;
+      }
+      applied.forEach(function (a) {
+        const cur = MMB.db.sync.dirty[a.key];
+        if (cur && cur.at === a.at) delete MMB.db.sync.dirty[a.key];
+      });
+      pushed += applied.length;
+      if (MMB.onSyncChange) MMB.onSyncChange();
+    }
+
+    const queue = chunks.slice();
+    const workers = [];
+    const parallel = Math.min(3, queue.length);
+    for (let w = 0; w < parallel; w++) {
+      workers.push((async function () {
+        while (queue.length && !firstError) await commitChunk(queue.shift());
+      })());
+    }
+    const settled = await Promise.allSettled(workers);
+    const rejected = settled.find(function (r) { return r.status === 'rejected'; });
+    if (rejected) throw rejected.reason;
+
+    MMB.db.sync.lastSyncedAt = new Date().toISOString();
+    MMB.db.sync.lastSyncMs = Date.now() - startedAt;
+    MMB.db.sync.lastSyncRecords = pushed;
+    MMB.db.sync.lastError = null;
+    finish();
+    return { ok: true, pushed: pushed, transactions: transactions };
+  }
+
   /* ── push ───────────────────────────────────────────────────── */
   async function push() {
     if (busy) return { ok: false, error: 'busy' };
@@ -110,6 +394,7 @@
     try {
       requireReady();
       const transactions = MMB.pendingCount();
+      if (isNativePlatform()) return await pushViaRest(transactions, startedAt);
       const db = getDb();
       const keys = Object.keys(MMB.db.sync.dirty);
       const settingsDirty = !!MMB.db.sync.dirtySettings;
@@ -285,12 +570,105 @@
     return false;
   }
 
+  /* ── fetch over REST (Android) ──────────────────────────────── */
+  async function fetchViaRest(startedAt) {
+    const token = await authToken();
+    const cursor = MMB.db.sync.cursor;
+    const cursorMs = cursor && typeof cursor.seconds === 'number'
+      ? cursor.seconds * 1000 + Math.floor((cursor.nanoseconds || 0) / 1e6)
+      : 0;
+    const next = JSON.parse(JSON.stringify(MMB.db));
+    let changes = 0;
+    const changedKeys = [];
+    let maxMs = cursorMs;
+
+    let pageToken = '';
+    do {
+      let url = restBase() + '/records?pageSize=500';
+      if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+      const page = await restGetUrl(url, token);
+      (page.documents || []).forEach(function (doc) {
+        const id = decodeURIComponent(String(doc.name || '').split('/').pop() || '');
+        if (!id) return;
+        const data = fromRestFields(doc.fields || {});
+        const ms = timestampMs(data._serverUpdatedAt || doc.updateTime || '');
+        if (ms > maxMs) maxMs = ms;
+        const kind = data._kind;
+        if (COLLECTIONS.indexOf(kind) === -1) return;
+        if (ms < cursorMs) return;
+        if (mergeRecord(next, kind, id, data, ms)) {
+          changes++;
+          changedKeys.push(kind + ':' + id);
+        }
+      });
+      pageToken = page.nextPageToken || '';
+    } while (pageToken);
+
+    const settingsDoc = await restGet('meta/settings', token);
+    if (settingsDoc) {
+      const data = fromRestFields(settingsDoc.fields || {});
+      const ms = timestampMs(data._serverUpdatedAt || settingsDoc.updateTime || '');
+      if (!next.sync.dirtySettings && ms > (next.sync.settingsSeen || 0)) {
+        const before = MMB.sharedSettingsHash(next);
+        SHARED_SETTINGS.forEach(function (k) {
+          if (k === 'shop' && data[k]) {
+            next.settings.shop = Object.assign({}, data[k], { logo: next.settings.shop.logo || '' });
+          } else if (data[k] !== undefined) {
+            next.settings[k] = data[k];
+          }
+        });
+        next.sync.settingsSeen = ms;
+        if (MMB.sharedSettingsHash(next) !== before) {
+          changes++;
+          changedKeys.push('meta:settings');
+        }
+      }
+    }
+
+    const brandingDoc = await restGet('meta/branding', token);
+    if (brandingDoc) {
+      const data = fromRestFields(brandingDoc.fields || {});
+      const ms = timestampMs(data._serverUpdatedAt || brandingDoc.updateTime || '');
+      if (!next.sync.dirtyLogo && ms > (next.sync.logoSeen || 0)) {
+        if (typeof data.logo === 'string' && data.logo !== next.settings.shop.logo) {
+          next.settings.shop.logo = data.logo;
+          changes++;
+          changedKeys.push('meta:branding');
+        }
+        next.sync.logoSeen = ms;
+        next.sync.logoBase = MMB.recordHash({ logo: next.settings.shop.logo || '' });
+      }
+    }
+
+    if (maxMs > 0) {
+      next.sync.cursor = msStamp(maxMs);
+      next.sync.lastFetchedServerAt = msStamp(maxMs);
+    }
+    next.sync.lastFetchedAt = new Date().toISOString();
+    next.sync.lastFetchMs = Date.now() - startedAt;
+    next.sync.lastFetchChanges = changes;
+    next.sync.lastError = null;
+    const discarded = next.sync.discarded || 0;
+    delete next.sync.discarded;
+
+    MMB.db = next;
+    if (!next.sync.dirtySettings) {
+      MMB.db.sync.settingsBase = MMB.recordHash(MMB.sharedSettings());
+    }
+    if (!next.sync.dirtyLogo) {
+      MMB.db.sync.logoBase = MMB.recordHash({ logo: MMB.db.settings.shop.logo || '' });
+    }
+    MMB.save({ origin: 'remote' });
+    return { ok: true, fetched: changes, discarded: discarded, keys: changedKeys };
+  }
+
   async function fetchAll() {
     if (busy) return { ok: false, error: 'busy' };
     setBusy('fetching');
     const startedAt = Date.now();
     try {
       requireReady();
+      if (isNativePlatform()) return await fetchViaRest(startedAt);
       const db = getDb();
       const cursor = fromStore(MMB.db.sync.cursor);
       const next = JSON.parse(JSON.stringify(MMB.db));
@@ -448,6 +826,15 @@
     // If HTTPS itself cannot read the database, the SDK will fail for the same
     // reason; the REST result is the diagnosis and avoids a long SDK retry.
     if (!out.rest || !out.rest.ok) {
+      out.lastError = MMB.db.sync.lastError || null;
+      return out;
+    }
+
+    if (isNativePlatform()) {
+      // Sync/Fetch no longer use the SDK on Android; its offline state is
+      // irrelevant. The REST result above is the real answer.
+      out.transport = 'rest';
+      out.sdkSkipped = 'Android uses the REST transport';
       out.lastError = MMB.db.sync.lastError || null;
       return out;
     }
