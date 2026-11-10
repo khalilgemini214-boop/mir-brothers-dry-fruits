@@ -32,10 +32,6 @@
     try { return window.Capacitor && window.Capacitor.Plugins ? window.Capacitor.Plugins[name] : null; } catch (e) { return null; }
   }
 
-  function isOffline() {
-    try { return navigator.onLine === false; } catch (e) { return false; }
-  }
-
   function feedUrl() {
     const custom = MMB.db && MMB.db.settings && MMB.db.settings.updates ? String(MMB.db.settings.updates.feedUrl || '').trim() : '';
     return custom || String(cfg.feedUrl || '').trim();
@@ -224,7 +220,8 @@
     try {
       const url = feedUrl();
       if (!url) throw new Error('no-feed');
-      if (isOffline()) throw new Error('offline');
+      // Do not skip on navigator.onLine: Android WebViews can report false
+      // while online. The request below fails fast if there is no network.
       if (isNative() && !/^https?:\/\//i.test(url)) throw new Error('no-feed');
       const feed = await fetchFeed(url);
       if (!feed || !feed.webVersion) throw new Error('bad-feed');
