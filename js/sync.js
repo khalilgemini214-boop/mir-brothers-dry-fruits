@@ -415,11 +415,26 @@
       out.rest = { ok: false, status: 0, error: String((e && e.message) || e).slice(0, 300) };
     }
 
+    // If HTTPS itself cannot read the database, the SDK will fail for the same
+    // reason; the REST result is the diagnosis and avoids a long SDK retry.
+    if (!out.rest || !out.rest.ok) {
+      out.lastError = MMB.db.sync.lastError || null;
+      return out;
+    }
+
     try {
       const db = getDb();
       out.transport = transport;
       const started = Date.now();
-      const snap = await db.collection('records').limit(1).get();
+      const read = db.collection('records').limit(1).get();
+      const timeout = new Promise(function (_, reject) {
+        setTimeout(function () {
+          const err = new Error('SDK read timed out after 15s');
+          err.code = 'timeout';
+          reject(err);
+        }, 15000);
+      });
+      const snap = await Promise.race([read, timeout]);
       out.sdk = { ok: true, docs: snap.size, ms: Date.now() - started };
     } catch (e) {
       out.transport = transport;
