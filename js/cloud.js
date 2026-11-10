@@ -107,9 +107,12 @@
     if (pass) pass.disabled = !!on;
   }
 
-  function setOffline() {
+  // navigator.onLine is unreliable in an Android WebView (it needs the
+  // ACCESS_NETWORK_STATE permission and can still be stale), so the badge is
+  // driven by real request failures instead of the flag.
+  function setOffline(show) {
     const el = document.getElementById('authOffline');
-    if (el) el.hidden = !!navigator.onLine;
+    if (el) el.hidden = !show;
   }
 
   function syncLangBtn() {
@@ -168,18 +171,15 @@
         (mail ? pass : email).focus();
         return;
       }
-      if (!navigator.onLine) {
-        setOffline();
-        setError(MMB.t('auth.network'));
-        return;
-      }
       setBusy(true);
       try {
         await MMB.cloud.signIn(mail, secret);
         try { localStorage.setItem(LAST_EMAIL, mail); } catch (e) { /* ignore */ }
         pass.value = '';
       } catch (err) {
-        setError(friendly(err && err.code));
+        const code = err && err.code;
+        if (code === 'auth/network-request-failed' || code === 'auth/timeout') setOffline(true);
+        setError(friendly(code));
         const card = document.querySelector('.auth-card');
         if (card) {
           card.classList.add('shake');
@@ -202,13 +202,12 @@
     if (langBtn) langBtn.addEventListener('click', toggleLang);
 
     window.addEventListener('online', function () {
-      setOffline();
+      setOffline(false);
       const screen = document.getElementById('authScreen');
       if (screen && !screen.hidden) setError('');
     });
-    window.addEventListener('offline', setOffline);
+    window.addEventListener('offline', function () { setOffline(true); });
 
-    setOffline();
     syncLangBtn();
   };
 })();

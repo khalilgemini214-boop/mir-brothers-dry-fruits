@@ -336,7 +336,8 @@
 
   async function doSync() {
     if (!MMB.sync || MMB.sync.busy()) return;
-    if (!navigator.onLine) { MMB.toast(t('sync.offline'), 'error'); return; }
+    // Do not trust navigator.onLine here: an Android WebView can report false
+    // even when the phone is online. Let the request decide.
     if (!MMB.db.sync.lastSyncedAt && MMB.pendingCount() > 20) {
       MMB.toast(t('sync.firstSync'), 'gold');
     }
@@ -354,7 +355,7 @@
 
   async function doFetch() {
     if (!MMB.sync || MMB.sync.busy()) return;
-    if (!navigator.onLine) { MMB.toast(t('sync.offline'), 'error'); return; }
+    // See doSync: navigator.onLine is not reliable inside the Android app.
     const startedAt = Date.now();
     const res = await MMB.sync.fetch();
     if (!res || !res.ok) {
