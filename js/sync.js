@@ -10,6 +10,7 @@
   let fs = null;
   let busy = null;
   let transport = 'streaming';
+  let nudgeBound = false;
 
   function getDb() {
     if (!fs) {
@@ -28,8 +29,30 @@
           console.warn('Firestore long-polling setting failed', e);
         }
       }
+
+      if (native) {
+        // Firestore's connectivity monitor is event-driven. The WebView can
+        // emit a false "offline" before the client exists, so tell it now and
+        // again whenever a false offline event arrives.
+        nudgeOnline();
+        setTimeout(nudgeOnline, 0);
+        if (!nudgeBound) {
+          nudgeBound = true;
+          window.addEventListener('offline', function () { setTimeout(nudgeOnline, 250); });
+        }
+      }
     }
     return fs;
+  }
+
+  function nudgeOnline() {
+    try {
+      if (fs && fs.enableNetwork) {
+        const p = fs.enableNetwork();
+        if (p && p.catch) p.catch(function () { });
+      }
+      window.dispatchEvent(new Event('online'));
+    } catch (e) { /* ignore */ }
   }
 
   function serverStamp() {
@@ -432,6 +455,8 @@
     try {
       const db = getDb();
       out.transport = transport;
+      // Give the online nudge a moment to start the stream.
+      await new Promise(function (resolve) { setTimeout(resolve, 800); });
       const started = Date.now();
       const read = db.collection('records').limit(1).get();
       const timeout = new Promise(function (_, reject) {
@@ -442,7 +467,12 @@
         }, 15000);
       });
       const snap = await Promise.race([read, timeout]);
-      out.sdk = { ok: true, docs: snap.size, ms: Date.now() - started };
+      out.sdk = {
+        ok: true,
+        docs: snap.size,
+        fromCache: snap.metadata ? snap.metadata.fromCache : null,
+        ms: Date.now() - started
+      };
     } catch (e) {
       out.transport = transport;
       out.sdk = {

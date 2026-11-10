@@ -1,6 +1,6 @@
 {
-  "version": "1.1.6",
-  "versionCode": 12,
+  "version": "1.1.7",
+  "versionCode": 13,
   "minNativeVersion": "1.0.4",
-  "notes": "Fix Firestore treating the Android WebView as offline: force navigator.onLine on native and tell the SDK the network is back. The connection test now shows the online flag."
+  "notes": "Nudge Firestore's event-driven connectivity monitor after the client is created and when the WebView sends a false offline event. The connection test now shows whether the SDK read came from cache."
 }
