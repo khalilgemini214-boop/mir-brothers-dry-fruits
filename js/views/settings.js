@@ -27,6 +27,7 @@
     else if (kind === 'sales') csv = MMB.csvSales();
     else if (kind === 'purchases') csv = MMB.csvPurchases();
     else if (kind === 'returns') csv = MMB.csvReturns();
+    else if (kind === 'dues') csv = MMB.csvDues();
     else if (kind === 'stock') csv = MMB.csvStock();
     try {
       await MMB.shareFile(filename, csv, 'text/csv;charset=utf-8', {
@@ -203,6 +204,7 @@
         '<button class="btn btn-sm btn-ghost" data-csv="accounts">' + t('settings.exportAccounts') + '</button>' +
         '<button class="btn btn-sm btn-ghost" data-csv="ledger">' + t('settings.exportLedger') + '</button>' +
         '<button class="btn btn-sm btn-ghost" data-csv="sales">' + t('settings.exportSales') + '</button>' +
+        '<button class="btn btn-sm btn-ghost" data-csv="dues">' + t('settings.exportDues') + '</button>' +
         '<button class="btn btn-sm btn-ghost" data-csv="purchases">' + t('settings.exportPurchases') + '</button>' +
         '<button class="btn btn-sm btn-ghost" data-csv="returns">' + t('settings.exportReturns') + '</button>' +
         '<button class="btn btn-sm btn-ghost" data-csv="stock">' + t('settings.exportStock') + '</button>' +

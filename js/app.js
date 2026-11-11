@@ -22,7 +22,7 @@
     const h = (location.hash || '').replace(/^#\/?/, '');
     const parts = h.split('?')[0].split('/').filter(Boolean);
     if (!parts.length) return { name: 'dashboard' };
-    if (parts[0] === 'accounts') return { name: 'accounts' };
+    if (parts[0] === 'accounts') return { name: 'accounts', tab: parts[1] === 'dues' ? 'dues' : 'accounts' };
     if (parts[0] === 'account' && parts[1]) {
       if (parts[2] === 'credit' || parts[2] === 'debit') {
         return { name: 'ledgerEntry', accountId: parts[1], type: parts[2] };
@@ -52,8 +52,14 @@
     let title = t('nav.dashboard');
     let sub = MMB.fmtDate(MMB.todayISO()) + ' · ' + MMB.weekday(MMB.todayISO());
     if (route.name === 'accounts') {
-      title = t('accounts.title');
-      sub = MMB.accounts().length === 1 ? t('accounts.countOne', { n: 1 }) : t('accounts.count', { n: MMB.accounts().length });
+      if (route.tab === 'dues') {
+        title = t('due.title');
+        const totals = MMB.duesTotals(MMB.dues('nearest'));
+        sub = totals.count ? t('due.customers', { n: totals.customerCount }) : t('due.subtitle');
+      } else {
+        title = t('accounts.title');
+        sub = MMB.accounts().length === 1 ? t('accounts.countOne', { n: 1 }) : t('accounts.count', { n: MMB.accounts().length });
+      }
     } else if (route.name === 'account') {
       const a = MMB.account(route.id);
       title = a ? a.name : t('accounts.title');
@@ -100,6 +106,7 @@
     try {
       if (route.name === 'account') MMB.views.accounts.renderLedger(view, route.id);
       else if (route.name === 'ledgerEntry') MMB.views.accounts.renderEntry(view, route);
+      else if (route.name === 'accounts' && route.tab === 'dues') MMB.views.accounts.renderDues(view);
       else MMB.views[route.name].render(view, route);
       MMB.applyI18n(view);
       if (scrollTop) requestAnimationFrame(function () { window.scrollTo(0, 0); });
@@ -276,6 +283,7 @@
       const route = parseRoute();
       if (route.name === 'ledgerEntry') MMB.navigate('account/' + route.accountId);
       else if (route.name === 'account') MMB.navigate('accounts');
+      else if (route.name === 'accounts' && route.tab === 'dues') MMB.navigate('accounts');
       else if (route.name === 'saleForm') MMB.navigate('stock/out');
       else if (route.name === 'purchaseForm') MMB.navigate('stock/in');
       else if (route.name !== 'dashboard') MMB.navigate('dashboard');

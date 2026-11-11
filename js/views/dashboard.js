@@ -72,6 +72,8 @@
       const recent = MMB.recent(7);
       const series30 = MMB.dailySeries(30);
       const series = series30.slice(-chartRange);
+      const dueList = MMB.dues('nearest');
+      const dueTotals = MMB.duesTotals(dueList);
       const todayISO = MMB.todayISO();
       const isUr = MMB.lang() === 'ur';
       const name = isUr ? shop.nameUr : shop.nameEn;
@@ -128,6 +130,16 @@
         '<div class="stat-top"><div class="stat-icon gold"><svg class="ic"><use href="#i-package"/></svg></div><span class="badge badge-gold">' + t('dashboard.stockValue') + '</span></div>' +
         '<div class="stat-value num">' + MMB.money(totals.value) + '</div><div class="stat-sub"><span class="dot"></span>' + MMB.qty(totals.qty, 'kg') + ' · ' + db.products.length + ' ' + (db.products.length === 1 ? t('stock.product') : t('dashboard.products')) + '</div></button>' +
         '</div>' +
+
+        (dueTotals.total > 0.0049
+          ? '<button class="due-banner' + (dueTotals.overdue > 0.0049 ? ' overdue' : '') + '" data-action="dues" style="margin-top:15px">' +
+          '<div class="db-ic">' + MMB.icon('calendar') + '</div>' +
+          '<div class="db-main"><div class="db-title">' + (dueTotals.overdue > 0.0049 ? t('dashboard.overdueDues') : t('dashboard.dues')) + '</div>' +
+          '<div class="db-sub">' + (dueTotals.count === 1 ? t('dashboard.duesCountOne') : t('dashboard.duesCount', { n: dueTotals.count })) +
+          ' · ' + t('due.customers', { n: dueTotals.customerCount }) + '</div></div>' +
+          '<div class="db-amt num ' + (dueTotals.overdue > 0.0049 ? 'negative' : '') + '">' + MMB.money(dueTotals.overdue > 0.0049 ? dueTotals.overdue : dueTotals.total) + '</div>' +
+          MMB.icon('chevron-right', 'row-arrow') + '</button>'
+          : '') +
 
         '<div class="grid" style="grid-template-columns:1.55fr .9fr;margin-top:15px" id="dashMid">' +
         '<section class="card card-pad">' +
@@ -193,6 +205,7 @@
           if (a === 'sale') { MMB.openSaleForm && MMB.openSaleForm(); }
           else if (a === 'purchase') { MMB.openPurchaseForm && MMB.openPurchaseForm(); }
           else if (a === 'accounts') { MMB.navigate('accounts'); }
+          else if (a === 'dues') { MMB.navigate('accounts/dues'); }
           else if (a === 'stock') { MMB.navigate('stock/out'); }
           else if (a === 'newAccount') { MMB.openAccountForm({}); }
           else if (a === 'adjust') { MMB.openAdjustmentForm && MMB.openAdjustmentForm(); }

@@ -198,6 +198,7 @@
     'settings.restore': 'Restore from backup', 'settings.exportCsv': 'Export CSV',
     'settings.exportAccounts': 'Accounts CSV', 'settings.exportLedger': 'Ledger CSV',
     'settings.exportSales': 'Sales CSV', 'settings.exportPurchases': 'Purchases CSV', 'settings.exportReturns': 'Returns CSV',
+    'settings.exportDues': 'Dues CSV',
     'settings.exportStock': 'Stock CSV', 'settings.lastBackup': 'Last backup: {date}', 'settings.never': 'Never',
     'settings.reset': 'Clear this device', 'settings.resetBody': 'This removes every account, bill, product and entry from this device only. Firestore is not touched.',
     'settings.about': 'About', 'settings.version': 'Version', 'settings.madeFor': 'Made for Muhammad Mir & Brothers',
@@ -305,7 +306,30 @@
     'sync.deletedLocal': '{n} local edit(s) were removed because another device deleted the record.',
     'sync.pending': '{n} unsynced',
     'sync.firstSync': 'First sync uploads the whole shop. Keep the app open until it finishes.',
-    'sync.signOutPending': 'You have {n} unsynced changes. Sync them before signing out if you want them in the cloud.'
+    'sync.signOutPending': 'You have {n} unsynced changes. Sync them before signing out if you want them in the cloud.',
+
+    'common.dueDate': 'Due date',
+    'due.title': 'Dues', 'due.subtitle': 'Customer bills by due date',
+    'due.accountsTab': 'Accounts', 'due.duesTab': 'Dues',
+    'due.total': 'Total due', 'due.overdue': 'Overdue', 'due.today': 'Due today', 'due.week': 'Next 7 days',
+    'due.customers': '{n} customers', 'due.customersOne': '{n} customer',
+    'due.all': 'All dues', 'due.thisWeek': 'This week', 'due.later': 'Later', 'due.noDue': 'No due date',
+    'due.nearest': 'Nearest first', 'due.farthest': 'Farthest first',
+    'due.searchPlaceholder': 'Search customer, phone or bill…',
+    'due.empty': 'No dues right now', 'due.emptyHint': 'Bills with an amount left appear here, grouped by due date.',
+    'due.emptyFilter': 'No bills in this filter',
+    'due.group.today': 'Today', 'due.group.tomorrow': 'Tomorrow', 'due.group.noDue': 'No due date',
+    'due.overdueOne': '1 day overdue', 'due.overdueDays': '{n} days overdue',
+    'due.dueToday': 'Due today', 'due.dueTomorrow': 'Due tomorrow', 'due.dueIn': 'Due in {n} days',
+    'due.paid': 'Paid',
+    'due.remaining': 'Remaining', 'due.billRemaining': 'Remaining on bill',
+    'due.billTotal': 'Bill total', 'due.returned': 'Returned',
+    'due.receivePayment': 'Receive payment', 'due.viewBill': 'View bill', 'due.openLedger': 'Open ledger',
+    'due.againstBill': 'Against bill #{no}',
+    'due.noBill': 'Other debit (no bill)', 'due.noBillHint': 'Manual debit on the customer ledger with no bill.',
+    'dashboard.dues': 'Dues', 'dashboard.overdueDues': 'Overdue dues', 'dashboard.duesCount': '{n} bills due',
+    'dashboard.duesCountOne': '1 bill due', 'dashboard.viewDues': 'View dues',
+    'dashboard.noDues': 'No pending dues', 'dashboard.dueSoon': 'Next due: {date}'
   };
 
   const ur = {
@@ -504,6 +528,7 @@
     'settings.restore': 'بیک اپ سے بحال کریں', 'settings.exportCsv': 'CSV ایکسپورٹ',
     'settings.exportAccounts': 'کھاتے CSV', 'settings.exportLedger': 'لیجر CSV',
     'settings.exportSales': 'فروخت CSV', 'settings.exportPurchases': 'خرید CSV', 'settings.exportReturns': 'واپسی CSV',
+    'settings.exportDues': 'باقیات CSV',
     'settings.exportStock': 'اسٹاک CSV', 'settings.lastBackup': 'آخری بیک اپ: {date}', 'settings.never': 'کبھی نہیں',
     'settings.reset': 'اس ڈیوائس کا ڈیٹا صاف کریں', 'settings.resetBody': 'یہ صرف اس ڈیوائس سے تمام کھاتے، بل، پروڈکٹس اور انٹریاں ہٹاتا ہے۔ فائربیس محفوظ رہتا ہے۔',
     'settings.about': 'بارے میں', 'settings.version': 'ورژن', 'settings.madeFor': 'محمد میر اینڈ برادرز کے لیے',
@@ -611,7 +636,30 @@
     'sync.deletedLocal': '{n} مقامی تبدیلیاں ہٹا دی گئیں کیونکہ کسی دوسرے ڈیوائس نے ریکارڈ حذف کیا۔',
     'sync.pending': '{n} غیر سنک شدہ',
     'sync.firstSync': 'پہلی سنک پوری دکان اپ لوڈ کرتی ہے۔ مکمل ہونے تک ایپ کھلی رکھیں۔',
-    'sync.signOutPending': 'آپ کے {n} غیر سنک شدہ ریکارڈ موجود ہیں۔ سائن آؤٹ سے پہلے سنک کریں اگر آپ انہیں کلاؤڈ میں رکھنا چاہتے ہیں۔'
+    'sync.signOutPending': 'آپ کے {n} غیر سنک شدہ ریکارڈ موجود ہیں۔ سائن آؤٹ سے پہلے سنک کریں اگر آپ انہیں کلاؤڈ میں رکھنا چاہتے ہیں۔',
+
+    'common.dueDate': 'ادائیگی کی تاریخ',
+    'due.title': 'باقیات', 'due.subtitle': 'گاہکوں کے بل ادا کی تاریخ کے مطابق',
+    'due.accountsTab': 'کھاتے', 'due.duesTab': 'باقیات',
+    'due.total': 'کل باقی', 'due.overdue': 'میعاد گزری', 'due.today': 'آج واجب', 'due.week': 'اگلے 7 دن',
+    'due.customers': '{n} گاہک', 'due.customersOne': '{n} گاہک',
+    'due.all': 'تمام باقیات', 'due.thisWeek': 'اس ہفتے', 'due.later': 'بعد میں', 'due.noDue': 'تاریخ مقرر نہیں',
+    'due.nearest': 'قریب ترین پہلے', 'due.farthest': 'دور ترین پہلے',
+    'due.searchPlaceholder': 'گاہک، فون یا بل تلاش کریں…',
+    'due.empty': 'ابھی کوئی باقی نہیں', 'due.emptyHint': 'جن بلوں کی رقم باقی ہے وہ تاریخ کے مطابق یہاں دکھائیں گے۔',
+    'due.emptyFilter': 'اس فلٹر میں کوئی بل نہیں',
+    'due.group.today': 'آج', 'due.group.tomorrow': 'کل', 'due.group.noDue': 'تاریخ مقرر نہیں',
+    'due.overdueOne': '1 دن تاخیر', 'due.overdueDays': '{n} دن تاخیر',
+    'due.dueToday': 'آج واجب', 'due.dueTomorrow': 'کل واجب', 'due.dueIn': '{n} دن میں واجب',
+    'due.paid': 'ادا شدہ',
+    'due.remaining': 'باقی', 'due.billRemaining': 'بل پر باقی',
+    'due.billTotal': 'کل بل', 'due.returned': 'واپس شدہ',
+    'due.receivePayment': 'رقم وصول کریں', 'due.viewBill': 'بل دیکھیں', 'due.openLedger': 'کھاتہ کھولیں',
+    'due.againstBill': 'بل نمبر {no} کے بدلے',
+    'due.noBill': 'دیگر نام (بغیر بل)', 'due.noBillHint': 'گاہک کے کھاتے میں دستی نام، کسی بل سے منسلک نہیں۔',
+    'dashboard.dues': 'باقیات', 'dashboard.overdueDues': 'میعاد گزری باقیات', 'dashboard.duesCount': '{n} بل باقی',
+    'dashboard.duesCountOne': '1 بل باقی', 'dashboard.viewDues': 'باقیات دیکھیں',
+    'dashboard.noDues': 'کوئی باقی نہیں', 'dashboard.dueSoon': 'اگلی تاریخ: {date}'
   };
 
   const dict = { en: en, ur: ur };

@@ -841,6 +841,53 @@ body.locked .overlay{z-index:260!important}
 .line-head .idx{max-width:calc(100% - 40px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ledger-summary .v{overflow-wrap:anywhere}
 .stock-tab .badge{font-size:9.5px;padding:1px 6px}
+
+/* ── dues ────────────────────────────────────────────────────── */
+.acct-tabs{margin-bottom:14px}
+.due-entry{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.due-entry .input{flex:1;min-width:150px}
+.due-quick{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.due-quick button{height:38px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-size:11.5px;font-weight:800;transition:border-color .18s,color .18s,background .18s}
+.due-quick button:hover{border-color:var(--green-3);color:var(--green-2)}
+.due-quick .due-clear{width:38px;padding:0;display:grid;place-items:center;color:var(--muted)}
+.due-quick .due-clear .ic{width:15px;height:15px}
+.due-flash{animation:dueFlash .38s ease}
+@keyframes dueFlash{0%{background:var(--gold-soft);border-color:var(--gold)}100%{background:var(--surface);border-color:var(--line)}}
+.due-summary{grid-template-columns:repeat(4,minmax(0,1fr))}
+.due-summary .v{font-size:14px}
+.due-card-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.due-toolbar{padding:12px 14px;margin-bottom:14px}
+.due-tools-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+.due-group{margin-bottom:16px}
+.due-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 7px}
+.due-group-title{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);min-width:0}
+.due-group-title .ic{width:14px;height:14px;color:var(--muted);flex:none}
+.due-group-title small{font-size:10.5px;font-weight:700;letter-spacing:0;text-transform:none;color:var(--muted);opacity:.9;white-space:nowrap}
+.due-group-title .badge{text-transform:none;letter-spacing:0}
+.due-group-head.overdue .due-group-title,
+.due-group-head.overdue .due-group-title .ic{color:var(--red)}
+.due-group-head.today .due-group-title,
+.due-group-head.today .due-group-title .ic{color:var(--gold)}
+.due-group-head.upcoming .due-group-title,
+.due-group-head.upcoming .due-group-title .ic{color:var(--green-2)}
+.due-group-sum{font-size:12.5px;font-weight:800;color:var(--ink-2);white-space:nowrap}
+.due-row .row-sub{align-items:flex-start}
+.due-banner{display:flex;align-items:center;gap:12px;width:100%;padding:13px 16px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--line);text-align:start;box-shadow:var(--shadow-sm);transition:transform .18s,box-shadow .18s,border-color .18s}
+.due-banner:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--line-2)}
+.due-banner .db-ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold);flex:none}
+.due-banner.overdue{border-color:color-mix(in srgb,var(--red) 30%, var(--line))}
+.due-banner.overdue .db-ic{background:var(--red-soft);color:var(--red)}
+.due-banner .db-main{flex:1;min-width:0}
+.due-banner .db-title{font-size:12.5px;font-weight:800}
+.due-banner .db-sub{font-size:10.5px;color:var(--muted);margin-top:1px}
+.due-banner .db-amt{font-size:15px;font-weight:800;white-space:nowrap}
+@media (max-width:640px){
+  .due-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .due-entry .input{width:100%;flex:1 1 100%}
+  .due-quick{width:100%}
+  .due-quick button{flex:1}
+  .due-quick .due-clear{flex:0 0 38px}
+}
 .setting-control .btn{padding:0 11px}
 @media (max-width:640px){
   .overlay.modal .sheet.wide{max-width:100%}

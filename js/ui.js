@@ -484,7 +484,8 @@
       '<div class="bill-contact"><div class="ph">' + MMB.esc(phones) + '</div><div>' + MMB.esc(shop.addressEn) + '</div><div class="bill-urdu" style="font-size:8pt">' + MMB.esc(shop.addressUr) + '</div></div></div>' +
       '<div class="bill-meta">' +
       '<div class="l"><span><strong>' + te('bills.billNo') + ' / ' + tu('bills.urduBillNo') + ':</strong> ' + MMB.esc(sale.billNo) + '</span>' +
-      '<span><strong>' + te('bills.date') + ' / ' + tu('bills.urduDate') + ':</strong> ' + MMB.fmtDate(sale.date) + '</span></div>' +
+      '<span><strong>' + te('bills.date') + ' / ' + tu('bills.urduDate') + ':</strong> ' + MMB.fmtDate(sale.date) + '</span>' +
+      (sale.dueDate ? '<span><strong>' + te('common.dueDate') + ' / ' + tu('common.dueDate') + ':</strong> ' + MMB.fmtDate(sale.dueDate) + '</span>' : '') + '</div>' +
       '<div class="l"><span><strong>' + te('bills.customer') + ' / ' + tu('bills.urduCustomer') + ':</strong> ' + MMB.esc(cust ? cust.name : '—') + '</span>' +
       (sale.vehicle ? '<span><strong>' + te('bills.vehicle') + ' / ' + tu('bills.urduVehicle') + ':</strong> ' + MMB.esc(sale.vehicle) + '</span>' : '') +
       (sale.destination ? '<span><strong>' + te('bills.destination') + ' / ' + tu('bills.urduDestination') + ':</strong> ' + MMB.esc(sale.destination) + '</span>' : '') + '</div>' +

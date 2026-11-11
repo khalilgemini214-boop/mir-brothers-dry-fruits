@@ -53,6 +53,7 @@
       vehicle: edit ? edit.vehicle || '' : '',
       destination: edit ? edit.destination || '' : '',
       note: edit ? edit.note || '' : '',
+      dueDate: edit ? edit.dueDate || '' : '',
       charges: {},
       lines: []
     };
@@ -98,6 +99,16 @@
         '<div id="billBroker">' + partyChipHTML(broker, t('stock.selectBroker'), true) + '</div></div>' : '') +
       '<div class="date-time full"><div class="field"><label class="label">' + t('common.date') + '</label><input class="input" type="date" id="billDate" value="' + state.date + '"></div>' +
       '<div class="field"><label class="label">' + t('common.time') + '</label><input class="input" type="time" id="billTime" value="' + state.time + '"></div></div>' +
+      (isSale ? '<div class="field full"><label class="label">' + t('common.dueDate') + ' <span class="opt">' + t('common.optional') + '</span></label>' +
+        '<div class="due-entry">' +
+        '<input class="input" type="date" id="billDueDate" value="' + MMB.esc(state.dueDate) + '" min="' + state.date + '">' +
+        '<div class="due-quick" id="billDueQuick">' +
+        '<button type="button" data-due-days="0">' + t('common.today') + '</button>' +
+        '<button type="button" data-due-days="7">+7</button>' +
+        '<button type="button" data-due-days="15">+15</button>' +
+        '<button type="button" data-due-days="30">+30</button>' +
+        '<button type="button" class="due-clear" data-due-clear aria-label="' + MMB.esc(t('common.clear')) + '" title="' + MMB.esc(t('common.clear')) + '">' + MMB.icon('x') + '</button>' +
+        '</div></div></div>' : '') +
       '</div>' +
 
       '<div class="section-head" style="margin:18px 0 9px"><div class="section-title">' + t('stock.product') + '</div><span class="micro">' + (isSale ? t('stock.out') : t('stock.in')) + '</span></div>' +
@@ -183,8 +194,30 @@
             ['broker'], t('stock.selectBroker'), t('stock.selectBroker'));
         }
 
-        el.querySelector('#billDate').addEventListener('change', function (e) { state.date = e.target.value || MMB.todayISO(); });
+        el.querySelector('#billDate').addEventListener('change', function (e) {
+          state.date = e.target.value || MMB.todayISO();
+          if (dueEl) dueEl.min = state.date;
+        });
         el.querySelector('#billTime').addEventListener('change', function (e) { state.time = e.target.value || MMB.nowHM(); });
+
+        const dueEl = el.querySelector('#billDueDate');
+        if (dueEl) {
+          dueEl.addEventListener('change', function () { state.dueDate = dueEl.value || ''; });
+          el.querySelectorAll('[data-due-days]').forEach(function (b) {
+            b.addEventListener('click', function () {
+              const days = Number(b.getAttribute('data-due-days')) || 0;
+              state.dueDate = MMB.addDays(state.date || MMB.todayISO(), days);
+              dueEl.value = state.dueDate;
+              dueEl.classList.add('due-flash');
+              setTimeout(function () { dueEl.classList.remove('due-flash'); }, 380);
+            });
+          });
+          const clearDue = el.querySelector('[data-due-clear]');
+          if (clearDue) clearDue.addEventListener('click', function () {
+            state.dueDate = '';
+            dueEl.value = '';
+          });
+        }
         const veh = el.querySelector('#billVehicle');
         if (veh) veh.addEventListener('input', function () { state.vehicle = veh.value; });
         const dest = el.querySelector('#billDestination');
@@ -398,7 +431,8 @@
             brokerId: isSale ? state.brokerId : null,
             date: state.date, time: state.time, lines: lines,
             charges: isSale ? state.charges : {},
-            vehicle: state.vehicle, destination: state.destination, note: state.note
+            vehicle: state.vehicle, destination: state.destination, note: state.note,
+            dueDate: isSale ? (state.dueDate || null) : null
           };
           const res = isSale ? MMB.saveSale(data, edit ? edit.id : null) : MMB.savePurchase(data, edit ? edit.id : null);
           if (!res.ok) { MMB.toast(t('common.error'), 'error'); return; }
@@ -431,10 +465,12 @@
     const returns = MMB.saleReturns(sale.id);
     const hasReturns = returns.length > 0;
     const fullyReturned = sale.lines.every(function (l, i) { return MMB.saleReturnedQty(sale.id, i) >= l.qtyKg - 0.0001; });
+    const dueInfo = MMB.dueForSale(sale.id);
     const body =
       '<div class="grid cols-2" style="gap:8px">' +
       '<div class="month-cell"><div class="k">' + t('bills.customer') + '</div><div class="v" style="font-size:13px">' + MMB.esc(cust ? cust.name : '—') + '</div></div>' +
       '<div class="month-cell"><div class="k">' + t('bills.date') + '</div><div class="v" style="font-size:13px">' + MMB.fmtDate(sale.date) + ' · ' + MMB.fmtTime(sale.time) + '</div></div>' +
+      (sale.dueDate ? '<div class="month-cell"><div class="k">' + t('common.dueDate') + '</div><div class="v" style="font-size:13px">' + MMB.fmtDate(sale.dueDate) + ' · ' + (dueInfo ? MMB.dueLabel(dueInfo) : t('due.paid')) + '</div></div>' : '') +
       (broker ? '<div class="month-cell"><div class="k">' + t('stock.broker') + '</div><div class="v" style="font-size:13px">' + MMB.esc(broker.name) + '</div></div>' : '') +
       (sale.vehicle ? '<div class="month-cell"><div class="k">' + t('stock.vehicle') + '</div><div class="v" style="font-size:13px">' + MMB.esc(sale.vehicle) + '</div></div>' : '') +
       (sale.destination ? '<div class="month-cell"><div class="k">' + t('stock.destination') + '</div><div class="v" style="font-size:13px">' + MMB.esc(sale.destination) + '</div></div>' : '') +
@@ -447,6 +483,7 @@
       '<div class="total-row"><span>' + t('stock.goodsTotal') + '</span><span class="v">' + MMB.money(sale.goodsTotal) + '</span></div>' +
       '<div class="total-row"><span>' + t('stock.charges') + '</span><span class="v">' + MMB.money(sale.chargesTotal) + '</span></div>' +
       '<div class="total-row grand"><span>' + t('stock.billTotal') + '</span><span class="v">' + MMB.money(sale.total) + '</span></div>' +
+      (dueInfo ? '<div class="total-row"><span>' + t('due.billRemaining') + '</span><span class="v negative">' + MMB.money(dueInfo.remaining) + '</span></div>' : '') +
       '<div class="total-row"><span>' + t('dashboard.commission') + ' (' + sale.commissionRate + '%)</span><span class="v">' + MMB.money(sale.commission) + '</span></div>' +
       '</div>' +
       (returns.length ? '<div class="section-head" style="margin:16px 0 6px"><div class="section-title">' + t('stock.saleReturn') + '</div></div>' +

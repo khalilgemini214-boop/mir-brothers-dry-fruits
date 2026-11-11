@@ -838,6 +838,7 @@
     sale.vehicle = String(data.vehicle || '').trim();
     sale.destination = String(data.destination || '').trim();
     sale.note = String(data.note || '').trim();
+    sale.dueDate = data.dueDate ? String(data.dueDate).slice(0, 10) : null;
     sale.updatedAt = new Date().toISOString();
 
     addSaleLedger(sale);
@@ -854,6 +855,157 @@
     d.sales = d.sales.filter(function (x) { return x.id !== id; });
     MMB.save();
     return { ok: true };
+  };
+
+  /* ── dues (customer receivables by bill) ──────────────────────
+     Payments are never linked to a specific bill, so the outstanding
+     amount is spread over the customer's bills oldest-first (FIFO).
+     This keeps the totals reconciled with the customer ledger.       */
+  MMB.dueStatus = function (dueDate, todayISO) {
+    if (!dueDate) return { status: 'nodue', days: null };
+    const today = MMB.parseISO(todayISO || MMB.todayISO());
+    const due = MMB.parseISO(dueDate);
+    if (isNaN(due)) return { status: 'nodue', days: null };
+    const days = Math.round((due - today) / 86400000);
+    return { status: days < 0 ? 'overdue' : days === 0 ? 'today' : 'upcoming', days: days };
+  };
+
+  MMB.dueLabel = function (due) {
+    if (!due) return '';
+    if (due.status === 'nodue') return MMB.t('due.noDue');
+    if (due.status === 'overdue') {
+      const n = Math.abs(due.days);
+      return n === 1 ? MMB.t('due.overdueOne') : MMB.t('due.overdueDays', { n: n });
+    }
+    if (due.status === 'today') return MMB.t('due.dueToday');
+    if (due.days === 1) return MMB.t('due.dueTomorrow');
+    return MMB.t('due.dueIn', { n: due.days });
+  };
+
+  MMB.dues = function (order) {
+    order = order === 'farthest' ? 'farthest' : 'nearest';
+    const d = MMB.db;
+    const today = MMB.todayISO();
+    const out = [];
+
+    // One pass over the ledger for every account balance.
+    const balances = {};
+    d.ledger.forEach(function (e) {
+      const a = MMB.account(e.accountId);
+      if (!a) return;
+      balances[a.id] = (balances[a.id] || 0) + MMB.num(e.amount) * MMB.entrySign(a, e.type);
+    });
+    // One pass over sale returns, keyed by bill.
+    const returnedBySale = {};
+    d.returns.forEach(function (r) {
+      if (r.type !== 'sale' || !r.saleId) return;
+      returnedBySale[r.saleId] = (returnedBySale[r.saleId] || 0) + MMB.num(r.total);
+    });
+    // Group bills by customer once instead of filtering the whole list per
+    // customer (matters on low-end phones with a long sales history).
+    const salesByCustomer = {};
+    d.sales.forEach(function (s) {
+      if (!s.customerId) return;
+      (salesByCustomer[s.customerId] || (salesByCustomer[s.customerId] = [])).push(s);
+    });
+
+    d.accounts.forEach(function (cust) {
+      if (!cust || cust.deleted || cust.type !== 'customer') return;
+      const bills = salesByCustomer[cust.id] || [];
+      bills.sort(function (a, b) {
+        return (a.date + ' ' + (a.time || '00:00') + ' ' + (a.createdAt || ''))
+          .localeCompare(b.date + ' ' + (b.time || '00:00') + ' ' + (b.createdAt || ''));
+      });
+
+      const items = bills.map(function (s) {
+        const returned = MMB.round(returnedBySale[s.id] || 0, 2);
+        const effective = Math.max(0, MMB.round(MMB.num(s.total) - returned, 2));
+        return { sale: s, returned: returned, effective: effective, remaining: effective };
+      });
+
+      const outstanding = Math.max(0, MMB.round(-(balances[cust.id] || 0), 2));
+      if (outstanding <= 0.0049) return;
+
+      const totalBills = MMB.round(items.reduce(function (sum, it) { return sum + it.effective; }, 0), 2);
+      // Bills already covered by payments/advances, oldest first.
+      let covered = Math.max(0, MMB.round(totalBills - outstanding, 2));
+      items.forEach(function (it) {
+        const applied = Math.min(covered, it.effective);
+        it.remaining = MMB.round(it.effective - applied, 2);
+        covered = MMB.round(covered - applied, 2);
+      });
+
+      items.forEach(function (it) {
+        if (!(it.remaining > 0.0049)) return;
+        const st = MMB.dueStatus(it.sale.dueDate, today);
+        out.push({
+          id: 'due_' + it.sale.id,
+          sale: it.sale,
+          customer: cust,
+          billNo: it.sale.billNo,
+          billTotal: MMB.num(it.sale.total),
+          returned: it.returned,
+          remaining: it.remaining,
+          dueDate: it.sale.dueDate || null,
+          days: st.days,
+          status: st.status
+        });
+      });
+
+      // A manual debit on the ledger that no bill explains. Keep the
+      // dues total equal to what the customer actually owes.
+      const extra = MMB.round(outstanding - totalBills, 2);
+      if (extra > 0.0049) {
+        out.push({
+          id: 'due_extra_' + cust.id,
+          sale: null,
+          customer: cust,
+          billNo: '',
+          billTotal: 0,
+          returned: 0,
+          remaining: extra,
+          dueDate: null,
+          days: null,
+          status: 'nodue'
+        });
+      }
+    });
+
+    out.sort(function (a, b) {
+      if (!a.dueDate && !b.dueDate) return (a.customer.name || '').localeCompare(b.customer.name || '');
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      let r = a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0;
+      if (r) return order === 'farthest' ? -r : r;
+      return (a.customer.name || '').localeCompare(b.customer.name || '') ||
+        String(a.billNo).localeCompare(String(b.billNo));
+    });
+    return out;
+  };
+
+  MMB.duesTotals = function (list) {
+    const totals = { total: 0, overdue: 0, today: 0, week: 0, count: 0, customers: {} };
+    (list || []).forEach(function (due) {
+      const amt = MMB.num(due.remaining);
+      totals.total += amt;
+      totals.count++;
+      if (due.customer) {
+        totals.customers[due.customer.id] = true;
+      }
+      if (due.status === 'overdue') totals.overdue += amt;
+      else if (due.status === 'today') totals.today += amt;
+      if (due.days != null && due.days >= 0 && due.days <= 7) totals.week += amt;
+    });
+    totals.total = MMB.round(totals.total, 2);
+    totals.overdue = MMB.round(totals.overdue, 2);
+    totals.today = MMB.round(totals.today, 2);
+    totals.week = MMB.round(totals.week, 2);
+    totals.customerCount = Object.keys(totals.customers).length;
+    return totals;
+  };
+
+  MMB.dueForSale = function (saleId) {
+    return MMB.dues('nearest').find(function (due) { return due.sale && due.sale.id === saleId; }) || null;
   };
 
   MMB.savePurchase = function (data, editId) {
@@ -1280,9 +1432,21 @@
     return MMB.toCSV(rows);
   };
   MMB.csvSales = function () {
-    const rows = [['Bill', 'Date', 'Customer', 'Broker', 'Goods', 'Charges', 'Total', 'Commission', 'Vehicle', 'Destination']];
+    const rows = [['Bill', 'Date', 'Due date', 'Customer', 'Broker', 'Goods', 'Charges', 'Total', 'Commission', 'Vehicle', 'Destination']];
     MMB.db.sales.forEach(function (s) {
-      rows.push([s.billNo, s.date, MMB.accountName(s.customerId), s.brokerId ? MMB.accountName(s.brokerId) : '', s.goodsTotal, s.chargesTotal, s.total, s.commission, s.vehicle || '', s.destination || '']);
+      rows.push([s.billNo, s.date, s.dueDate || '', MMB.accountName(s.customerId), s.brokerId ? MMB.accountName(s.brokerId) : '', s.goodsTotal, s.chargesTotal, s.total, s.commission, s.vehicle || '', s.destination || '']);
+    });
+    return MMB.toCSV(rows);
+  };
+
+  MMB.csvDues = function () {
+    const rows = [['Due date', 'Status', 'Customer', 'Phone', 'Bill', 'Bill total', 'Returned', 'Remaining']];
+    MMB.dues('nearest').forEach(function (due) {
+      rows.push([
+        due.dueDate || '', due.status === 'nodue' ? '' : MMB.dueLabel(due),
+        due.customer ? due.customer.name : '', due.customer ? due.customer.phone || '' : '',
+        due.billNo || '', due.billTotal, due.returned, due.remaining
+      ]);
     });
     return MMB.toCSV(rows);
   };

@@ -8,9 +8,26 @@
   let query = '';
   let sort = 'newest';
 
+  let dueFilter = 'all';
+  let dueQuery = '';
+  let dueSort = 'nearest';
+  let pendingEntryPrefill = null;
+
   const TYPES = ['customer', 'broker', 'cash', 'expense'];
   const TYPE_BADGE = { customer: 'badge-green', broker: 'badge-gold', cash: 'badge-blue', expense: 'badge-red' };
   const TYPE_AVATAR = { customer: '', broker: 'gold', cash: 'blue', expense: 'red' };
+
+  function accountsTabsHTML(active, dueCount) {
+    if (dueCount == null) dueCount = MMB.dues().length;
+    return '<div class="stock-tabs acct-tabs">' +
+      '<a class="stock-tab ' + (active === 'accounts' ? 'active' : '') + '" href="#/accounts">' +
+      MMB.icon('users') + '<span>' + t('due.accountsTab') + '</span>' +
+      '<span class="badge ' + (active === 'accounts' ? 'badge-gold' : 'badge-gray') + '">' + MMB.accounts().length + '</span></a>' +
+      '<a class="stock-tab out ' + (active === 'dues' ? 'active' : '') + '" href="#/accounts/dues">' +
+      MMB.icon('calendar') + '<span>' + t('due.duesTab') + '</span>' +
+      '<span class="badge ' + (active === 'dues' ? 'badge-gold' : 'badge-gray') + '">' + dueCount + '</span></a>' +
+      '</div>';
+  }
 
   /* ── accounts list ────────────────────────────────────────── */
   MMB.views.accounts = {
@@ -30,6 +47,7 @@
       });
 
       root.innerHTML =
+        accountsTabsHTML('accounts') +
         '<div class="card card-pad" style="padding:14px 16px;margin-bottom:14px">' +
         '<div class="input-wrap">' + MMB.icon('search') + '<input class="input" id="accSearch" placeholder="' + MMB.esc(t('accounts.searchPlaceholder')) + '" value="' + MMB.esc(query) + '" autocomplete="off"></div>' +
         '<div class="chips chips-compact" style="margin-top:11px" id="accChips">' +
@@ -117,6 +135,223 @@
     }
   };
 
+  /* ── dues ─────────────────────────────────────────────────── */
+  function dueMatches(due, key) {
+    if (key === 'overdue') return due.status === 'overdue';
+    if (key === 'today') return due.status === 'today';
+    if (key === 'week') return due.days != null && due.days >= 0 && due.days <= 7;
+    if (key === 'later') return due.days != null && due.days > 7;
+    if (key === 'nodue') return due.status === 'nodue';
+    return true;
+  }
+
+  function openDueActions(due) {
+    const actions = [];
+    if (due.sale) {
+      actions.push({ label: t('due.viewBill'), icon: 'receipt', act: 'bill' });
+      actions.push({ label: t('due.receivePayment'), icon: 'arrow-down-left', act: 'pay' });
+    }
+    actions.push({ label: t('due.openLedger'), icon: 'book', act: 'ledger' });
+    const body = '<div class="party-list">' + actions.map(function (a) {
+      return '<button class="party-item" data-act="' + a.act + '">' +
+        '<div class="entry-icon">' + MMB.icon(a.icon) + '</div>' +
+        '<div class="row-main"><div class="row-title">' + a.label + '</div></div>' +
+        MMB.icon('chevron-right', 'row-arrow') + '</button>';
+    }).join('') + '</div>';
+    MMB.openSheet({
+      title: due.customer ? due.customer.name : t('due.title'),
+      subtitle: (due.sale ? '#' + due.billNo + ' · ' : '') + MMB.money(due.remaining),
+      body: body,
+      onMount: function (el, api) {
+        el.querySelectorAll('[data-act]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            const act = b.getAttribute('data-act');
+            api.close();
+            if (act === 'bill') {
+              setTimeout(function () { MMB.openBillPreview(due.sale); }, 120);
+            } else if (act === 'ledger') {
+              setTimeout(function () { MMB.navigate('account/' + due.customer.id); }, 120);
+            } else if (act === 'pay') {
+              setTimeout(function () {
+                pendingEntryPrefill = {
+                  at: Date.now(),
+                  accountId: due.customer.id,
+                  type: 'credit',
+                  amount: due.remaining,
+                  details: t('due.againstBill', { no: due.billNo }),
+                  date: MMB.todayISO(),
+                  returnTo: 'accounts/dues'
+                };
+                MMB.navigate('account/' + due.customer.id + '/credit');
+              }, 120);
+            }
+          });
+        });
+      }
+    });
+  }
+
+  MMB.views.accounts.renderDues = function (root) {
+    const today = MMB.todayISO();
+    const all = MMB.dues(dueSort);
+    const totals = MMB.duesTotals(all);
+
+    const FILTERS = [
+      ['all', t('due.all')], ['overdue', t('due.overdue')], ['today', t('due.today')],
+      ['week', t('due.thisWeek')], ['later', t('due.later')], ['nodue', t('due.noDue')]
+    ];
+
+    function countOf(key) {
+      if (key === 'all') return all.length;
+      return all.filter(function (due) { return dueMatches(due, key); }).length;
+    }
+
+    function groupInfo(dueDate) {
+      if (!dueDate) return { text: t('due.group.noDue'), tone: 'nodue', date: '' };
+      if (dueDate === today) return { text: t('due.group.today'), tone: 'today', date: MMB.fmtDate(dueDate) };
+      if (dueDate === MMB.addDays(today, 1)) return { text: t('due.group.tomorrow'), tone: 'upcoming', date: MMB.fmtDate(dueDate) };
+      return {
+        text: MMB.weekday(dueDate, true),
+        tone: dueDate < today ? 'overdue' : 'upcoming',
+        date: MMB.fmtDate(dueDate)
+      };
+    }
+
+    function dueRowHTML(due) {
+      const isExtra = !due.sale;
+      const name = due.customer ? due.customer.name : '—';
+      const avatarTone = due.status === 'overdue' ? 'red' : due.status === 'today' ? 'gold' : '';
+      const badge = due.status === 'overdue' ? 'badge-red' : due.status === 'today' ? 'badge-gold' : 'badge-gray';
+      return '<button class="list-row due-row' + (due.status === 'overdue' ? ' overdue' : '') + '" data-due="' + due.id + '">' +
+        MMB.avatar(name, avatarTone) +
+        '<div class="row-main"><div class="row-title">' + MMB.esc(name) +
+        (isExtra
+          ? ' <span class="badge badge-gray">' + t('due.noBill') + '</span>'
+          : ' <span class="badge badge-green">#' + MMB.esc(due.billNo) + '</span>') +
+        '</div><div class="row-sub">' +
+        (isExtra
+          ? MMB.esc(t('due.noBillHint'))
+          : '<span class="badge ' + badge + '">' + MMB.dueLabel(due) + '</span>' +
+          (due.returned > 0.0049 ? '<span class="sep"></span><span>' + t('due.returned') + ' ' + MMB.money(due.returned) + '</span>' : '')) +
+        (due.customer && due.customer.phone ? '<span class="sep"></span><span>' + MMB.esc(due.customer.phone) + '</span>' : '') +
+        '</div></div>' +
+        '<div class="row-end"><div class="row-amount negative num">' + MMB.money(due.remaining) + '</div>' +
+        '<div class="row-note">' + t('due.remaining') + '</div></div>' +
+        MMB.icon('chevron-right', 'row-arrow') + '</button>';
+    }
+
+    const customerText = totals.customerCount === 1
+      ? t('due.customersOne', { n: totals.customerCount })
+      : t('due.customers', { n: totals.customerCount });
+
+    root.innerHTML =
+      accountsTabsHTML('dues', all.length) +
+      '<div class="ledger-summary due-summary">' +
+      '<div class="card"><div class="k">' + t('due.total') + '</div><div class="v negative num">' + MMB.money(totals.total) + '</div><div class="due-card-sub">' + MMB.esc(customerText) + '</div></div>' +
+      '<div class="card"><div class="k">' + t('due.overdue') + '</div><div class="v ' + (totals.overdue > 0 ? 'negative' : '') + ' num">' + MMB.money(totals.overdue) + '</div></div>' +
+      '<div class="card"><div class="k">' + t('due.today') + '</div><div class="v num">' + MMB.money(totals.today) + '</div></div>' +
+      '<div class="card"><div class="k">' + t('due.week') + '</div><div class="v num">' + MMB.money(totals.week) + '</div></div>' +
+      '</div>' +
+      '<div class="card card-pad due-toolbar">' +
+      '<div class="input-wrap">' + MMB.icon('search') + '<input class="input" id="dueSearch" placeholder="' + MMB.esc(t('due.searchPlaceholder')) + '" value="' + MMB.esc(dueQuery) + '" autocomplete="off"></div>' +
+      '<div class="chips chips-compact" style="margin-top:11px" id="dueChips">' + FILTERS.map(function (f) {
+        return '<button class="chip ' + (dueFilter === f[0] ? 'active' : '') + '" data-filter="' + f[0] + '">' + f[1] +
+          '<span class="count">' + countOf(f[0]) + '</span></button>';
+      }).join('') + '</div>' +
+      '<div class="due-tools-row">' +
+      '<div class="sort-toggle" id="dueSort">' +
+      '<button data-sort="nearest" class="' + (dueSort === 'nearest' ? 'active' : '') + '">' + t('due.nearest') + '</button>' +
+      '<button data-sort="farthest" class="' + (dueSort === 'farthest' ? 'active' : '') + '">' + t('due.farthest') + '</button>' +
+      '</div>' +
+      '<button class="icon-btn sm" id="dueExport" title="' + MMB.esc(t('common.export')) + '" aria-label="' + MMB.esc(t('common.export')) + '">' + MMB.icon('download') + '</button>' +
+      '</div></div>' +
+      '<div id="dueList"></div>';
+
+    const listEl = root.querySelector('#dueList');
+    const searchEl = root.querySelector('#dueSearch');
+
+    function renderList() {
+      const q = dueQuery.trim().toLowerCase();
+      const visible = all.filter(function (due) {
+        if (!dueMatches(due, dueFilter)) return false;
+        if (!q) return true;
+        const hay = [
+          due.customer ? due.customer.name : '',
+          due.customer ? due.customer.phone || '' : '',
+          due.billNo || ''
+        ].join(' ').toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+
+      if (!all.length) {
+        listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('calendar', t('due.empty'), t('due.emptyHint'),
+          '<button class="btn btn-primary" data-new-sale>' + MMB.icon('plus') + t('stock.newSale') + '</button>') + '</div>';
+      } else if (!visible.length) {
+        listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('search', t('due.emptyFilter'), '') + '</div>';
+      } else {
+        const groups = [];
+        visible.forEach(function (due) {
+          const key = due.dueDate || 'nodue';
+          let g = groups[groups.length - 1];
+          if (!g || g.key !== key) {
+            g = { key: key, dueDate: due.dueDate, items: [] };
+            groups.push(g);
+          }
+          g.items.push(due);
+        });
+
+        listEl.innerHTML = groups.map(function (g) {
+          const info = groupInfo(g.dueDate);
+          const sum = MMB.round(g.items.reduce(function (s, due) { return s + due.remaining; }, 0), 2);
+          return '<div class="due-group">' +
+            '<div class="due-group-head ' + info.tone + '">' +
+            '<div class="due-group-title">' + MMB.icon('calendar') +
+            '<span>' + info.text + '</span>' + (info.date ? '<small>' + info.date + '</small>' : '') +
+            '<span class="badge badge-gray">' + g.items.length + '</span></div>' +
+            '<div class="due-group-sum num">' + MMB.money(sum) + '</div></div>' +
+            '<div class="card" style="padding:4px 14px"><div class="list">' + g.items.map(dueRowHTML).join('') + '</div></div>' +
+            '</div>';
+        }).join('');
+      }
+
+      listEl.querySelectorAll('[data-due]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          const due = all.find(function (x) { return x.id === b.getAttribute('data-due'); });
+          if (due) openDueActions(due);
+        });
+      });
+      const newSale = listEl.querySelector('[data-new-sale]');
+      if (newSale) newSale.addEventListener('click', function () { MMB.openSaleForm(); });
+    }
+
+    searchEl.addEventListener('input', function () { dueQuery = searchEl.value; renderList(); });
+    root.querySelectorAll('#dueChips [data-filter]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        dueFilter = b.getAttribute('data-filter');
+        root.querySelectorAll('#dueChips .chip').forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        renderList();
+      });
+    });
+    root.querySelectorAll('#dueSort [data-sort]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        dueSort = b.getAttribute('data-sort') === 'farthest' ? 'farthest' : 'nearest';
+        MMB.rerender();
+      });
+    });
+    root.querySelector('#dueExport').addEventListener('click', function () {
+      MMB.shareFile('dues.csv', MMB.csvDues(), 'text/csv;charset=utf-8', {
+        dialogTitle: t('common.export'),
+        savedToast: t('common.done')
+      }).catch(function (e) {
+        if (e && e.name === 'AbortError') return;
+        MMB.toast(t('common.shareFailed'), 'error');
+      });
+    });
+
+    renderList();
+  };
+
   /* ── ledger ───────────────────────────────────────────────── */
   function entryEffect(account, entry) {
     return MMB.entrySign(account, entry.type) * MMB.num(entry.amount);
@@ -181,6 +416,12 @@
     const pair = entry ? MMB.entryPair(entry) : null;
     let partyId = pair ? pair.accountId : null;
     const currentBalance = MMB.accountBalance(account.id);
+    const prefill = (!entry && pendingEntryPrefill &&
+      pendingEntryPrefill.accountId === account.id &&
+      pendingEntryPrefill.type === type &&
+      Date.now() - pendingEntryPrefill.at < 30000) ? pendingEntryPrefill : null;
+    pendingEntryPrefill = null;
+    const returnTo = prefill && prefill.returnTo ? prefill.returnTo : null;
 
     function partyChip() {
       if (!partyId) {
@@ -194,11 +435,11 @@
 
     const body =
       '<div class="field"><label class="label">' + t('ledger.amount') + '</label>' +
-      '<input class="input input-lg num" id="leAmount"' + (editing ? '' : ' data-autofocus') + ' type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" value="' + (editing ? entry.amount : '') + '"></div>' +
+      '<input class="input input-lg num" id="leAmount"' + (editing ? '' : ' data-autofocus') + ' type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" value="' + (editing ? entry.amount : (prefill ? prefill.amount : '')) + '"></div>' +
       '<div class="field mt-12"><label class="label">' + t('common.details') + ' <span class="opt">' + t('common.optional') + '</span></label>' +
-      '<input class="input" id="leDetails" maxlength="160" autocomplete="off" placeholder="' + MMB.esc(t('ledger.detailsPlaceholder')) + '" value="' + (editing ? MMB.esc(entry.details) : '') + '"></div>' +
+      '<input class="input" id="leDetails" maxlength="160" autocomplete="off" placeholder="' + MMB.esc(t('ledger.detailsPlaceholder')) + '" value="' + (editing ? MMB.esc(entry.details) : (prefill ? MMB.esc(prefill.details) : '')) + '"></div>' +
       '<div class="date-time mt-12">' +
-      '<div class="field"><label class="label">' + t('common.date') + '</label><input class="input" id="leDate" type="date" value="' + (editing ? entry.date : MMB.todayISO()) + '"></div>' +
+      '<div class="field"><label class="label">' + t('common.date') + '</label><input class="input" id="leDate" type="date" value="' + (editing ? entry.date : (prefill ? prefill.date : MMB.todayISO())) + '"></div>' +
       '<div class="field"><label class="label">' + t('common.time') + '</label><input class="input" id="leTime" type="time" value="' + (editing ? entry.time : MMB.nowHM()) + '"></div></div>' +
       '<div class="field mt-12"><label class="label">' + t('ledger.party') + ' <span class="opt">' + t('common.optional') + '</span></label>' +
       '<div id="leParty">' + partyChip() + '</div><div class="hint">' + t('ledger.partyHint') + '</div></div>' +
@@ -220,7 +461,7 @@
       '</div>';
 
     const el = root.querySelector('#ledgerEntryPage');
-    const back = function () { MMB.navigate('account/' + account.id); };
+    const back = function () { MMB.navigate(returnTo || ('account/' + account.id)); };
 
     const amountEl = el.querySelector('#leAmount');
     const detailsEl = el.querySelector('#leDetails');
