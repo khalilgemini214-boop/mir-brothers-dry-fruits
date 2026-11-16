@@ -1,5 +1,5 @@
 /* Mir & Brothers — offline cache */
-const CACHE = 'mmb-dryfruits-v4';
+const CACHE = 'mmb-dryfruits-v5';
 
 const ASSETS = [
   './',
@@ -24,6 +24,7 @@ const ASSETS = [
   './js/views/accounts.js',
   './js/views/stock.js',
   './js/views/settings.js',
+  './js/users.js',
   './js/app.js',
   './assets/fonts/manrope-latin.woff2',
   './assets/fonts/fraunces-latin.woff2',

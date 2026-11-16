@@ -3,8 +3,8 @@
    outbox until the user presses Sync; Fetch never writes to Firestore. */
 (function () {
   const MMB = window.MMB;
-  const COLLECTIONS = ['accounts', 'products', 'ledger', 'sales', 'purchases', 'returns', 'adjustments'];
-  const SHARED_SETTINGS = ['shop', 'commissionRate', 'lowStockKg', 'defaultCartonKg'];
+  const COLLECTIONS = ['users', 'accounts', 'products', 'ledger', 'sales', 'purchases', 'returns', 'adjustments'];
+  const SHARED_SETTINGS = ['shop', 'commissionRate', 'lowStockKg', 'defaultCartonKg', 'bardanaRate', 'billLang'];
   const CHUNK = 400;
 
   let fs = null;

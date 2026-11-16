@@ -25,15 +25,17 @@ The language button (globe) switches the whole app between English and Urdu (RTL
   - Expense: debit = expense, credit = reversal.
   - A party entry is created with the opposite type, so both ledgers stay in step.
 - **Brokerage:** 0.45% of the goods value (not the charges), configurable in Settings, sales only, one broker per bill. It is credited to the broker and treated as a cost in P&L. It is *not* added to the customer's bill automatically; the optional **Dalali** charge field is there if you want to pass a charge to the buyer.
-- **Sale bill:** goods + any charge fields (Bardana, Dalali, Nikhara, Chhappai, Pehri, Tulai, Other). The full total is debited to the customer's ledger with the bill number.
+- **Sale bill:** goods + any charge fields (Bardana, Dalali, Nikhara, Chhappai, Pehri, Tulai, Other). The full total is debited to the customer's ledger with the bill number. If a **Bardana rate / carton** is set in Settings, Bardana is filled automatically as rate × cartons (kg lines are converted using each product's kg/carton).
 - **Purchases:** supplier is credited the full purchase value. No extra charges on purchases (as requested).
 - **Stock:** each product has a default kg-per-carton (usually 10, editable). Entry can be in kg or cartons and converts automatically. Rates are always per kg. Valuation uses weighted average cost; selling more than available shows a warning but is allowed.
 - **Purchase returns:** partial or full, per line, at the original purchase rate. Supplier's balance is debited and stock goes out.
 - **Sale returns:** partial or full, per line, at the original sale rate. Stock comes back at the original cost, the customer is credited, and the broker's commission is reversed proportionally (0.45% of the returned goods). Bill charges are **not** refunded — the return hint says this. A sale with returns cannot be edited or deleted until the returns are removed.
-- **Stock adjustments:** damage / shortage / self-use / other; positive or negative; valued at average cost and counted as a loss/gain in P&L.
+- **Stock adjustments:** damage / shortage / self-use / other; add stock with an optional rate, or remove stock (valued at average cost and counted as a stock loss). Every adjustment is listed in Stock In and in the adjustment history.
 - **True profit (P&L):** bill totals (goods + charges) − sale returns − cost of goods sold at weighted average + returned cost − brokerage net of reversal − expenses − stock losses. Sale bills are the revenue; purchases affect stock and COGS, not P&L directly.
 - **Bill numbers:** start at `0227`, 4 digits, never reused. Change the next number in **Settings → Next bill number** before your first bill (for example to `0228` if `0227` is already in your book). Purchase numbers are `P-0001`.
-- **Printing:** A5, with both English and Urdu headings and Arial/Nastaliq fallbacks. Use “Save as PDF” in the print dialog for a PDF.
+- **Users & roles:** Settings → Users & access creates app profiles. **Full access** can do everything; **View only** can see accounts, bills, stock, dues and bills but cannot add, edit, delete, receive payments, or see profit/P&L, expenses and the dashboard chart. Profiles can have a 4–6 digit PIN and are switched from the user chip in the top bar. On a device with no saved profile the app opens **Choose user** instead of silently becoming the owner; it refreshes the profile list from the cloud, and full-access profiles require their PIN. The first device sets the owner name and PIN. Press **Sync** after adding or changing users so other devices receive the profiles. These are app profiles, not Firebase logins — the Firebase password remains the outer gate.
+- **Bill language:** Settings → Appearance → Bill language chooses **English + Urdu**, **English only**, or **Urdu only** for printed bills and PDFs. Urdu-only bills use RTL layout and Urdu amount-in-words.
+- **Printing:** A5, configurable bill language, with Arial/Nastaliq fallbacks. Use “Save as PDF” in the print dialog for a PDF.
 
 ## Data & backup
 
@@ -44,7 +46,7 @@ The language button (globe) switches the whole app between English and Urdu (RTL
 
 ## Printing
 
-The sale bill has a logo, shop header (English + Urdu), bill number/date, customer, vehicle/destination, item table, charges, grand total, amount in words and signature lines. To preview a saved bill, open a sale in **Stock Out → sale → View bill**. The preview and print are fixed LTR documents (like the paper bill) even when the app UI is in Urdu; the bill labels stay bilingual. The printed title bar falls back to a light bar if the browser's print dialog has background graphics disabled, so it stays readable.
+The sale bill has a logo, shop header, bill number/date, customer, vehicle/destination, item table, charges, grand total, amount in words and signature lines. The bill language is set in Settings: bilingual (English + Urdu), English only, or Urdu only (RTL with Urdu amount in words). To preview a saved bill, open a sale in **Stock Out → sale → View bill**. The printed title bar falls back to a light bar if the browser's print dialog has background graphics disabled, so it stays readable.
 
 ## Android app & silent updates
 

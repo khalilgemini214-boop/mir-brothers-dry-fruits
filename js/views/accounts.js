@@ -33,10 +33,12 @@
   MMB.views.accounts = {
     render: function (root) {
       const db = MMB.db;
+      const admin = MMB.isAdmin();
+      const accounts = MMB.accounts();
       const summary = MMB.summary();
       const totalBalance = MMB.round(summary.cash + summary.receivable - summary.payable, 2);
-      const counts = { all: db.accounts.length };
-      TYPES.forEach(function (tp) { counts[tp] = db.accounts.filter(function (a) { return a.type === tp; }).length; });
+      const counts = { all: accounts.length };
+      TYPES.forEach(function (tp) { counts[tp] = accounts.filter(function (a) { return a.type === tp; }).length; });
 
       // Latest ledger entry per account, for sorting and the list subtitle.
       const lastByAccount = {};
@@ -66,7 +68,7 @@
       const searchEl = root.querySelector('#accSearch');
 
       function renderList() {
-        let arr = db.accounts.slice();
+        let arr = accounts.slice();
         if (filter !== 'all') arr = arr.filter(function (a) { return a.type === filter; });
         const q = query.trim().toLowerCase();
         if (q) arr = arr.filter(function (a) {
@@ -81,9 +83,9 @@
           return a.name.localeCompare(b.name);
         });
 
-        if (!db.accounts.length) {
+        if (!accounts.length) {
           listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('users', t('accounts.empty'), t('accounts.emptyHint'),
-            '<button class="btn btn-primary" data-new>' + MMB.icon('plus') + t('accounts.new') + '</button>') + '</div>';
+            admin ? '<button class="btn btn-primary" data-new>' + MMB.icon('plus') + t('accounts.new') + '</button>' : '') + '</div>';
         } else if (!arr.length) {
           listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('search', t('accounts.noResults'), '') + '</div>';
         } else {
@@ -112,6 +114,7 @@
       }
 
       function openNew() {
+        if (!admin) return;
         MMB.openAccountForm({
           type: filter === 'all' ? 'customer' : filter,
           onSaved: function () { MMB.rerender(); }
@@ -127,7 +130,7 @@
           renderList();
         });
       });
-      MMB.setFAB('<button class="fab" id="accFab" aria-label="' + MMB.esc(t('accounts.new')) + '" title="' + MMB.esc(t('accounts.new')) + '">' + MMB.icon('plus') + '</button>');
+      MMB.setFAB(admin ? '<button class="fab" id="accFab" aria-label="' + MMB.esc(t('accounts.new')) + '" title="' + MMB.esc(t('accounts.new')) + '">' + MMB.icon('plus') + '</button>' : '');
       const fab = document.getElementById('accFab');
       if (fab) fab.addEventListener('click', openNew);
 
@@ -149,7 +152,7 @@
     const actions = [];
     if (due.sale) {
       actions.push({ label: t('due.viewBill'), icon: 'receipt', act: 'bill' });
-      actions.push({ label: t('due.receivePayment'), icon: 'arrow-down-left', act: 'pay' });
+      if (MMB.isAdmin()) actions.push({ label: t('due.receivePayment'), icon: 'arrow-down-left', act: 'pay' });
     }
     actions.push({ label: t('due.openLedger'), icon: 'book', act: 'ledger' });
     const body = '<div class="party-list">' + actions.map(function (a) {
@@ -285,7 +288,7 @@
 
       if (!all.length) {
         listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('calendar', t('due.empty'), t('due.emptyHint'),
-          '<button class="btn btn-primary" data-new-sale>' + MMB.icon('plus') + t('stock.newSale') + '</button>') + '</div>';
+          MMB.isAdmin() ? '<button class="btn btn-primary" data-new-sale>' + MMB.icon('plus') + t('stock.newSale') + '</button>' : '') + '</div>';
       } else if (!visible.length) {
         listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('search', t('due.emptyFilter'), '') + '</div>';
       } else {
@@ -412,6 +415,7 @@
   }
 
   function renderEntryPage(root, account, type, entry) {
+    if (!MMB.isAdmin()) { MMB.navigate('account/' + account.id); return; }
     const editing = !!entry;
     const pair = entry ? MMB.entryPair(entry) : null;
     let partyId = pair ? pair.accountId : null;
@@ -527,6 +531,7 @@
   }
 
   function openEntryActions(entry) {
+    if (!MMB.isAdmin()) return;
     const actions = [];
     if (entry.refType === 'sale') {
       const hasReturns = MMB.saleReturns(entry.refId).length > 0;
@@ -639,6 +644,7 @@
       return;
     }
     const balance = MMB.accountBalance(account.id);
+    const admin = MMB.isAdmin();
     const entries = MMB.accountEntries(account.id, sort);
     const hasEntries = entries.length > 0;
     const runningById = {};
@@ -664,7 +670,7 @@
       '<div class="row-sub"><span class="badge ' + TYPE_BADGE[account.type] + '">' + t('accounts.type.' + account.type) + '</span>' +
       (account.phone ? '<span class="sep"></span><span>' + MMB.esc(account.phone) + '</span>' : '') + '</div></div></div>' +
       '<div class="head-actions"><button class="icon-btn" id="ledgerPdf" aria-label="' + MMB.esc(t('ledger.pdfTitle')) + '" title="' + MMB.esc(t('ledger.pdfTitle')) + '">' + MMB.icon('download') + '</button>' +
-      '<button class="icon-btn" id="ledgerEdit" aria-label="' + MMB.esc(t('common.edit')) + '">' + MMB.icon('pencil') + '</button></div></div>' +
+      (admin ? '<button class="icon-btn" id="ledgerEdit" aria-label="' + MMB.esc(t('common.edit')) + '">' + MMB.icon('pencil') + '</button>' : '') + '</div></div>' +
 
       '<section class="ledger-balance-card ' + balanceTone + '">' +
       '<div class="k">' + (account.type === 'expense' ? t('accounts.balance.expense') : t('ledger.summary.balance')) + '</div>' +
@@ -682,16 +688,16 @@
       '<div class="sort-toggle" id="ledgerSort"><button data-sort="newest" class="' + (sort === 'newest' ? 'active' : '') + '">' + t('common.newest') + '</button><button data-sort="oldest" class="' + (sort === 'oldest' ? 'active' : '') + '">' + t('common.oldest') + '</button></div></div>' +
 
       '<div class="ledger-list" id="ledgerList"></div>' +
-      (hasEntries ? '<div style="height:96px"></div><div class="ledger-sticky">' + ledgerButtons(account) + '</div>' : '');
+      (admin && hasEntries ? '<div style="height:96px"></div><div class="ledger-sticky">' + ledgerButtons(account) + '</div>' : '');
 
     const listEl = root.querySelector('#ledgerList');
     if (!entries.length) {
       const cClass = account.type === 'cash' ? 'btn-danger' : 'btn-primary';
       const dClass = account.type === 'cash' ? 'btn-primary' : 'btn-danger';
-      const actions = '<div class="row-flex wrap gap-8" style="justify-content:center;margin-top:16px">' +
+      const actions = admin ? '<div class="row-flex wrap gap-8" style="justify-content:center;margin-top:16px">' +
         '<button class="btn ' + cClass + '" data-entry-type="credit">' + MMB.icon('arrow-down-left') + typeLabel(account, 'credit') + '</button>' +
         '<button class="btn ' + dClass + '" data-entry-type="debit">' + MMB.icon('arrow-up-right') + typeLabel(account, 'debit') + '</button>' +
-        '</div>';
+        '</div>' : '';
       listEl.innerHTML = '<div style="padding:8px">' + MMB.emptyHTML('book', t('ledger.empty'), t('ledger.emptyHint'), actions) + '</div>';
     } else {
       listEl.innerHTML = entries.map(function (e) {
@@ -707,14 +713,15 @@
           (pairLabel ? '<div class="entry-link">' + MMB.icon('users') + '<span>' + MMB.esc(pairLabel) + '</span></div>' : '') + '</div>' +
           '<div class="row-end"><div class="entry-amount">' + entryAmountHTML(account, e) + '</div>' +
           '<div class="row-note ' + rbTone + '">' + t('ledger.balShort') + ' <span class="num">' + MMB.money(rb) + '</span></div></div>' +
-          '<button class="icon-btn sm" data-menu="' + e.id + '" aria-label="' + MMB.esc(t('common.more')) + '">' + MMB.icon('more') + '</button>' +
+          (admin ? '<button class="icon-btn sm" data-menu="' + e.id + '" aria-label="' + MMB.esc(t('common.more')) + '">' + MMB.icon('more') + '</button>' : '') +
           '</div>';
       }).join('');
     }
 
     root.querySelector('#ledgerBack').addEventListener('click', function () { MMB.navigate('accounts'); });
     root.querySelector('#ledgerPdf').addEventListener('click', function () { MMB.shareLedgerPDF(account); });
-    root.querySelector('#ledgerEdit').addEventListener('click', function () {
+    const ledgerEdit = root.querySelector('#ledgerEdit');
+    if (ledgerEdit) ledgerEdit.addEventListener('click', function () {
       MMB.openAccountForm({ account: account, onSaved: function () { MMB.rerender(); }, onDeleted: function () { MMB.navigate('accounts'); } });
     });
     root.querySelectorAll('#ledgerSort [data-sort]').forEach(function (b) {

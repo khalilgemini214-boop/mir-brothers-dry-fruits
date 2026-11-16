@@ -6,6 +6,7 @@
 
   let tab = 'in';
   let stockSearch = '';
+  let inFilter = 'all';
 
   const CHARGE_KEYS = ['bardana', 'dalali', 'nikhara', 'chhappai', 'pehri', 'tulai', 'other'];
 
@@ -29,6 +30,7 @@
   let pendingBillPrefill = null;
 
   function openBillForm(mode, edit, prefillLines) {
+    if (!MMB.isAdmin()) { MMB.toast(t('users.readonly'), 'error'); return; }
     const isSale = mode === 'sale';
     if (!edit && prefillLines && prefillLines.length) pendingBillPrefill = prefillLines;
     MMB.navigate((isSale ? 'sale/' : 'purchase/') + (edit && edit.id ? edit.id : 'new'));
@@ -119,6 +121,12 @@
         '<div class="charges-grid">' + CHARGE_KEYS.map(function (k) {
           if (k === 'dalali') {
             return '<div class="field"><label class="label">' + t('stock.dalali') + '</label><input class="input num" id="billBrokerage" type="number" readonly tabindex="-1" placeholder="0" value=""></div>';
+          }
+          if (k === 'bardana') {
+            const auto = MMB.num(MMB.db.settings.bardanaRate) > 0;
+            return '<div class="field"><label class="label">' + t('stock.bardana') + '</label>' +
+              '<input class="input num" id="billBardana" type="number" inputmode="decimal" step="0.01" min="0" data-charge="bardana" placeholder="0" value="' + (state.charges.bardana ? state.charges.bardana : '') + '"' + (auto ? ' readonly' : '') + '>' +
+              '<div class="hint" id="billBardanaHint"></div></div>';
           }
           return '<div class="field"><label class="label">' + t('stock.' + k) + '</label><input class="input num" type="number" inputmode="decimal" step="0.01" min="0" data-charge="' + k + '" placeholder="0" value="' + (state.charges[k] ? state.charges[k] : '') + '"></div>';
         }).join('') + '</div>' : '') +
@@ -234,6 +242,23 @@
 
         function updateTotals() {
           const goods = MMB.round(state.lines.reduce(function (s, l) { return s + lineAmount(l); }, 0), 2);
+          const cartons = MMB.round(state.lines.reduce(function (s, l) {
+            const kg = lineKg(l);
+            const ck = MMB.num(l.cartonKg) || MMB.db.settings.defaultCartonKg || 10;
+            return s + (kg > 0 ? kg / ck : 0);
+          }, 0), 3);
+          const bardanaRate = MMB.num(MMB.db.settings.bardanaRate);
+          const bardanaEl = el.querySelector('#billBardana');
+          const bardanaHint = el.querySelector('#billBardanaHint');
+          if (bardanaRate > 0 && bardanaEl) {
+            state.charges.bardana = MMB.round(cartons * bardanaRate, 2);
+            bardanaEl.value = state.charges.bardana || '';
+            bardanaEl.readOnly = true;
+            if (bardanaHint) bardanaHint.textContent = t('stock.bardanaAuto', { cartons: MMB.qty(cartons), rate: MMB.money(bardanaRate) });
+          } else if (bardanaEl) {
+            bardanaEl.readOnly = false;
+            if (bardanaHint) bardanaHint.textContent = '';
+          }
           const chargesTotal = MMB.round(CHARGE_KEYS.reduce(function (s, k) {
             return k === 'dalali' ? s : s + MMB.num(state.charges[k]);
           }, 0), 2);
@@ -466,6 +491,7 @@
     const hasReturns = returns.length > 0;
     const fullyReturned = sale.lines.every(function (l, i) { return MMB.saleReturnedQty(sale.id, i) >= l.qtyKg - 0.0001; });
     const dueInfo = MMB.dueForSale(sale.id);
+    const admin = MMB.isAdmin();
     const body =
       '<div class="grid cols-2" style="gap:8px">' +
       '<div class="month-cell"><div class="k">' + t('bills.customer') + '</div><div class="v" style="font-size:13px">' + MMB.esc(cust ? cust.name : '—') + '</div></div>' +
@@ -484,18 +510,18 @@
       '<div class="total-row"><span>' + t('stock.charges') + '</span><span class="v">' + MMB.money(sale.chargesTotal) + '</span></div>' +
       '<div class="total-row grand"><span>' + t('stock.billTotal') + '</span><span class="v">' + MMB.money(sale.total) + '</span></div>' +
       (dueInfo ? '<div class="total-row"><span>' + t('due.billRemaining') + '</span><span class="v negative">' + MMB.money(dueInfo.remaining) + '</span></div>' : '') +
-      '<div class="total-row"><span>' + t('dashboard.commission') + ' (' + sale.commissionRate + '%)</span><span class="v">' + MMB.money(sale.commission) + '</span></div>' +
+      (admin ? '<div class="total-row"><span>' + t('dashboard.commission') + ' (' + sale.commissionRate + '%)</span><span class="v">' + MMB.money(sale.commission) + '</span></div>' : '') +
       '</div>' +
       (returns.length ? '<div class="section-head" style="margin:16px 0 6px"><div class="section-title">' + t('stock.saleReturn') + '</div></div>' +
         returns.map(function (r) {
-          return '<div class="product-line"><div class="thumb" style="background:var(--blue-soft);color:var(--blue)">' + MMB.icon('refresh') + '</div><div class="row-main"><div class="pname">' + t('stock.saleReturn') + ' · ' + MMB.fmtDate(r.date) + '</div><div class="pmeta">' + r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + (r.commissionReversal ? ' · ' + t('stock.commissionReversal') + ' ' + MMB.money(r.commissionReversal) : '') + '</div></div><div class="pqty num">−' + MMB.money(r.total) + '</div><button class="icon-btn sm" data-view-sret="' + r.id + '" aria-label="' + MMB.esc(t('common.view')) + '">' + MMB.icon('eye') + '</button><button class="icon-btn sm danger" data-del-sret="' + r.id + '" aria-label="' + MMB.esc(t('common.delete')) + '">' + MMB.icon('trash') + '</button></div>';
+          return '<div class="product-line"><div class="thumb" style="background:var(--blue-soft);color:var(--blue)">' + MMB.icon('refresh') + '</div><div class="row-main"><div class="pname">' + t('stock.saleReturn') + ' · ' + MMB.fmtDate(r.date) + '</div><div class="pmeta">' + r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + (admin && r.commissionReversal ? ' · ' + t('stock.commissionReversal') + ' ' + MMB.money(r.commissionReversal) : '') + '</div></div><div class="pqty num">−' + MMB.money(r.total) + '</div><button class="icon-btn sm" data-view-sret="' + r.id + '" aria-label="' + MMB.esc(t('common.view')) + '">' + MMB.icon('eye') + '</button>' + (admin ? '<button class="icon-btn sm danger" data-del-sret="' + r.id + '" aria-label="' + MMB.esc(t('common.delete')) + '">' + MMB.icon('trash') + '</button>' : '') + '</div>';
         }).join('') : '') +
-      (hasReturns ? '<div class="hint warn mt-12">' + t('stock.cannotEditSale') + '</div>' : '') +
+      (admin && hasReturns ? '<div class="hint warn mt-12">' + t('stock.cannotEditSale') + '</div>' : '') +
       (sale.note ? '<div class="hint mt-12">' + MMB.esc(sale.note) + '</div>' : '') +
       '<div class="row-flex wrap gap-8 mt-16"><button class="btn btn-sm btn-soft" id="sdView">' + MMB.icon('eye') + t('stock.viewBill') + '</button>' +
-      '<button class="btn btn-sm btn-gold" id="sdReturn" ' + (fullyReturned ? 'disabled' : '') + '>' + MMB.icon('refresh') + t('stock.saleReturn') + '</button>' +
-      '<button class="btn btn-sm btn-ghost" id="sdEdit" ' + (hasReturns ? 'disabled' : '') + '>' + MMB.icon('pencil') + t('common.edit') + '</button>' +
-      '<button class="btn btn-sm btn-danger" id="sdDelete" ' + (hasReturns ? 'disabled' : '') + '>' + MMB.icon('trash') + t('common.delete') + '</button></div>';
+      (admin ? '<button class="btn btn-sm btn-gold" id="sdReturn" ' + (fullyReturned ? 'disabled' : '') + '>' + MMB.icon('refresh') + t('stock.saleReturn') + '</button>' +
+        '<button class="btn btn-sm btn-ghost" id="sdEdit" ' + (hasReturns ? 'disabled' : '') + '>' + MMB.icon('pencil') + t('common.edit') + '</button>' +
+        '<button class="btn btn-sm btn-danger" id="sdDelete" ' + (hasReturns ? 'disabled' : '') + '>' + MMB.icon('trash') + t('common.delete') + '</button>' : '') + '</div>';
 
     MMB.openSheet({
       title: t('stock.saleDetails'),
@@ -541,6 +567,7 @@
   }
 
   function openSaleReturn(sale) {
+    if (!MMB.isAdmin()) { MMB.toast(t('users.readonly'), 'error'); return; }
     const rows = sale.lines.map(function (l, i) {
       const already = MMB.saleReturnedQty(sale.id, i);
       return { line: l, index: i, already: already, remaining: MMB.round(l.qtyKg - already, 3) };
@@ -615,7 +642,7 @@
         return '<div class="product-line"><div class="thumb" style="background:var(--blue-soft);color:var(--blue)">' + MMB.icon('refresh') + '</div><div class="row-main"><div class="pname">' + MMB.esc(l.name) + '</div><div class="pmeta">' + MMB.qty(l.qtyKg, 'kg') + ' × ' + MMB.money(l.rate) + '</div></div><div class="pqty num">' + MMB.money(l.amount) + '</div></div>';
       }).join('') +
       '<div class="totals mt-16"><div class="total-row grand"><span>' + t('stock.returnTotal') + '</span><span class="v">' + MMB.money(ret.total) + '</span></div>' +
-      (ret.commissionReversal ? '<div class="total-row"><span>' + t('stock.commissionReversal') + '</span><span class="v">' + MMB.money(ret.commissionReversal) + '</span></div>' : '') +
+      (MMB.isAdmin() && ret.commissionReversal ? '<div class="total-row"><span>' + t('stock.commissionReversal') + '</span><span class="v">' + MMB.money(ret.commissionReversal) + '</span></div>' : '') +
       '</div>' +
       (ret.note ? '<div class="hint mt-12">' + MMB.esc(ret.note) + '</div>' : '');
     MMB.openSheet({
@@ -624,11 +651,12 @@
       body: body,
       footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button>' +
         (sale ? '<button class="btn btn-primary" id="sretBill">' + MMB.icon('eye') + t('stock.viewBill') + '</button>' : '') +
-        '<button class="btn btn-danger" id="sretDelete">' + MMB.icon('trash') + t('common.delete') + '</button>',
+        (MMB.isAdmin() ? '<button class="btn btn-danger" id="sretDelete">' + MMB.icon('trash') + t('common.delete') + '</button>' : ''),
       onMount: function (el, api) {
         const view = el.querySelector('#sretBill');
         if (view) view.addEventListener('click', function () { MMB.openBillPreview(sale); });
-        el.querySelector('#sretDelete').addEventListener('click', async function () {
+        const del = el.querySelector('#sretDelete');
+        if (del) del.addEventListener('click', async function () {
           const ok = await MMB.confirm({ title: t('stock.deleteReturn'), body: t('common.cannotUndo'), danger: true, confirmText: t('common.delete') });
           if (!ok) return;
           MMB.deleteSaleReturn(ret.id);
@@ -649,6 +677,7 @@
     const focusedLine = Number.isInteger(lineIndex) && p.lines[lineIndex] ? lineIndex : null;
     const soldLines = focusedLine != null ? [p.lines[focusedLine]] : p.lines;
     const fullyReturned = p.lines.every(function (l, i) { return MMB.returnedQty(p.id, i) >= l.qtyKg - 0.0001; });
+    const admin = MMB.isAdmin();
 
     const body =
       '<div class="grid cols-2" style="gap:8px">' +
@@ -658,27 +687,31 @@
       '<div class="section-head" style="margin:16px 0 6px"><div class="section-title">' + t('stock.purchaseDetails') + '</div><span class="badge badge-gray">' + p.lines.length + ' ' + (p.lines.length === 1 ? t('common.item') : t('common.items')) + '</span></div>' +
       p.lines.map(function (l, i) {
         const ret = MMB.returnedQty(p.id, i);
-        return '<div class="product-line"><div class="thumb">' + MMB.icon('package') + '</div><div class="row-main"><div class="pname">' + MMB.esc(l.name) + '</div><div class="pmeta">' + MMB.qty(l.qtyKg, 'kg') + ' × ' + MMB.money(l.rate) + (ret > 0 ? ' · ' + t('stock.alreadyReturned', { qty: MMB.qty(ret) }) : '') + '</div></div><div class="pqty num">' + MMB.money(l.amount) + '</div><button class="icon-btn sm" data-sell-line="' + i + '" title="' + MMB.esc(t('stock.sellProduct')) + '" aria-label="' + MMB.esc(t('stock.sellProduct')) + '">' + MMB.icon('cart') + '</button></div>';
+        return '<div class="product-line"><div class="thumb">' + MMB.icon('package') + '</div><div class="row-main"><div class="pname">' + MMB.esc(l.name) + '</div><div class="pmeta">' + MMB.qty(l.qtyKg, 'kg') + ' × ' + MMB.money(l.rate) + (ret > 0 ? ' · ' + t('stock.alreadyReturned', { qty: MMB.qty(ret) }) : '') + '</div></div><div class="pqty num">' + MMB.money(l.amount) + '</div>' + (admin ? '<button class="icon-btn sm" data-sell-line="' + i + '" title="' + MMB.esc(t('stock.sellProduct')) + '" aria-label="' + MMB.esc(t('stock.sellProduct')) + '">' + MMB.icon('cart') + '</button>' : '') + '</div>';
       }).join('') +
       '<div class="totals mt-16"><div class="total-row grand"><span>' + t('stock.total') + '</span><span class="v">' + MMB.money(p.total) + '</span></div></div>' +
       (returns.length ? '<div class="section-head" style="margin:16px 0 6px"><div class="section-title">' + t('stock.return') + '</div></div>' +
         returns.map(function (r) {
-          return '<div class="product-line"><div class="thumb" style="background:var(--blue-soft);color:var(--blue)">' + MMB.icon('refresh') + '</div><div class="row-main"><div class="pname">' + t('stock.return') + ' · ' + MMB.fmtDate(r.date) + '</div><div class="pmeta">' + r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + '</div></div><div class="pqty num">−' + MMB.money(r.total) + '</div><button class="icon-btn sm danger" data-del-return="' + r.id + '">' + MMB.icon('trash') + '</button></div>';
+          return '<div class="product-line"><div class="thumb" style="background:var(--blue-soft);color:var(--blue)">' + MMB.icon('refresh') + '</div><div class="row-main"><div class="pname">' + t('stock.return') + ' · ' + MMB.fmtDate(r.date) + '</div><div class="pmeta">' + r.lines.map(function (l) { return l.name + ' ' + MMB.qty(l.qtyKg, 'kg'); }).join(', ') + '</div></div><div class="pqty num">−' + MMB.money(r.total) + '</div>' + (admin ? '<button class="icon-btn sm danger" data-del-return="' + r.id + '">' + MMB.icon('trash') + '</button>' : '') + '</div>';
         }).join('') : '') +
       (p.note ? '<div class="hint mt-12">' + MMB.esc(p.note) + '</div>' : '') +
-      (hasReturns ? '<div class="hint warn mt-12">' + t('stock.cannotEditPurchase') + '</div>' : '') +
-      '<div class="row-flex wrap gap-8 mt-16"><button class="btn btn-sm btn-soft" id="pdEdit" ' + (hasReturns ? 'disabled' : '') + '>' + MMB.icon('pencil') + t('common.edit') + '</button>' +
-      '<button class="btn btn-sm btn-danger" id="pdDelete">' + MMB.icon('trash') + t('common.delete') + '</button></div>';
+      (admin && hasReturns ? '<div class="hint warn mt-12">' + t('stock.cannotEditPurchase') + '</div>' : '') +
+      (admin ? '<div class="row-flex wrap gap-8 mt-16"><button class="btn btn-sm btn-soft" id="pdEdit" ' + (hasReturns ? 'disabled' : '') + '>' + MMB.icon('pencil') + t('common.edit') + '</button>' +
+        '<button class="btn btn-sm btn-danger" id="pdDelete">' + MMB.icon('trash') + t('common.delete') + '</button></div>' : '');
 
     MMB.openSheet({
       title: t('stock.purchaseDetails'),
       subtitle: p.no,
       body: body,
-      footer: '<button class="btn btn-ghost" id="pdReturn" ' + (fullyReturned ? 'disabled' : '') + '>' + MMB.icon('refresh') + t('stock.return') + '</button>' +
-        '<button class="btn btn-primary" id="pdSell">' + MMB.icon('cart') + (focusedLine != null ? t('stock.sellProduct') : t('stock.sell')) + '</button>',
+      footer: admin
+        ? '<button class="btn btn-ghost" id="pdReturn" ' + (fullyReturned ? 'disabled' : '') + '>' + MMB.icon('refresh') + t('stock.return') + '</button>' +
+        '<button class="btn btn-primary" id="pdSell">' + MMB.icon('cart') + (focusedLine != null ? t('stock.sellProduct') : t('stock.sell')) + '</button>'
+        : '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button>',
       onMount: function (el, api) {
-        el.querySelector('#pdEdit').addEventListener('click', function () { api.close(); setTimeout(function () { MMB.openPurchaseForm(p); }, 140); });
-        el.querySelector('#pdDelete').addEventListener('click', async function () {
+        const edit = el.querySelector('#pdEdit');
+        if (edit) edit.addEventListener('click', function () { api.close(); setTimeout(function () { MMB.openPurchaseForm(p); }, 140); });
+        const del = el.querySelector('#pdDelete');
+        if (del) del.addEventListener('click', async function () {
           const ok = await MMB.confirm({ title: t('stock.deletePurchase'), body: MMB.esc(t('stock.deletePurchaseBody', { no: p.no })), danger: true, confirmText: t('common.delete') });
           if (!ok) return;
           const r = MMB.deletePurchase(p.id);
@@ -705,7 +738,8 @@
             };
           });
         }
-        el.querySelector('#pdSell').addEventListener('click', function () { sellLines(saleLinesFrom(soldLines)); });
+        const sell = el.querySelector('#pdSell');
+        if (sell) sell.addEventListener('click', function () { sellLines(saleLinesFrom(soldLines)); });
         el.querySelectorAll('[data-sell-line]').forEach(function (b) {
           b.addEventListener('click', function () {
             const line = p.lines[Number(b.getAttribute('data-sell-line'))];
@@ -727,6 +761,7 @@
   }
 
   function openPurchaseReturn(purchase) {
+    if (!MMB.isAdmin()) { MMB.toast(t('users.readonly'), 'error'); return; }
     const rows = purchase.lines.map(function (l, i) {
       const already = MMB.returnedQty(purchase.id, i);
       const remaining = MMB.round(l.qtyKg - already, 3);
@@ -789,16 +824,23 @@
 
   /* ── adjustment ───────────────────────────────────────────── */
   MMB.openAdjustmentForm = function () {
-    if (!MMB.searchProducts('').length) { MMB.toast(t('stock.addProductFirst'), 'error'); MMB.openProductForm({ onSaved: function () { MMB.openAdjustmentForm(); } }); return; }
-    const opts = MMB.searchProducts('').map(function (p) {
-      const st = (MMB.computeStock().states[p.id] || { qty: 0 });
-      return '<option value="' + p.id + '">' + MMB.esc(p.name) + ' — ' + MMB.qty(st.qty, 'kg') + '</option>';
+    if (!MMB.isAdmin()) { MMB.toast(t('users.readonly'), 'error'); return; }
+    const products = MMB.searchProducts('');
+    if (!products.length) { MMB.toast(t('stock.addProductFirst'), 'error'); MMB.openProductForm({ onSaved: function () { MMB.openAdjustmentForm(); } }); return; }
+    const sd = MMB.computeStock();
+    const opts = products.map(function (p) {
+      const st = sd.states[p.id] || { qty: 0, avg: 0 };
+      return '<option value="' + p.id + '" data-avg="' + (st.avg || 0) + '">' + MMB.esc(p.name) + ' — ' + MMB.qty(st.qty, 'kg') + '</option>';
     }).join('');
+    const firstAvg = (sd.states[products[0].id] || {}).avg || 0;
     const body = '<div class="form-grid">' +
       '<div class="field full"><label class="label">' + t('stock.product') + '</label><select class="select" id="adjProduct">' + opts + '</select></div>' +
       '<div class="field"><label class="label">' + t('stock.adjustQty') + '</label><input class="input num" id="adjQty" type="number" inputmode="decimal" step="0.01" placeholder="e.g. -5" data-autofocus></div>' +
       '<div class="field"><label class="label">' + t('stock.adjustReason') + '</label><select class="select" id="adjReason">' +
       ['damage', 'shortage', 'self', 'other'].map(function (r) { return '<option value="' + r + '">' + t('stock.reason.' + r) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field full"><label class="label">' + t('stock.rate') + ' <span class="opt">' + t('common.optional') + '</span></label>' +
+      '<div class="input-wrap"><input class="input num has-affix" id="adjRate" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" value="' + (firstAvg || '') + '"><span class="input-affix">' + t('stock.ratePerKgShort') + '</span></div>' +
+      '<div class="hint">' + t('stock.adjustRateHint') + '</div></div>' +
       '<div class="field full"><label class="label">' + t('common.notes') + ' <span class="opt">' + t('common.optional') + '</span></label><input class="input" id="adjNote" maxlength="120"></div>' +
       '<div class="date-time full"><div class="field"><label class="label">' + t('common.date') + '</label><input class="input" type="date" id="adjDate" value="' + MMB.todayISO() + '"></div>' +
       '<div class="field"><label class="label">' + t('common.time') + '</label><input class="input" type="time" id="adjTime" value="' + MMB.nowHM() + '"></div></div>' +
@@ -807,15 +849,26 @@
       title: t('stock.adjust'), body: body,
       footer: '<button class="btn btn-ghost" data-close>' + t('common.cancel') + '</button><button class="btn btn-primary" id="adjSave">' + t('common.save') + '</button>',
       onMount: function (el, api) {
+        const productEl = el.querySelector('#adjProduct');
+        const qtyEl = el.querySelector('#adjQty');
+        const rateEl = el.querySelector('#adjRate');
+        productEl.addEventListener('change', function () {
+          const opt = productEl.options[productEl.selectedIndex];
+          rateEl.value = MMB.num(opt && opt.getAttribute('data-avg')) || '';
+        });
         el.querySelector('#adjSave').addEventListener('click', function () {
-          const qty = MMB.num(el.querySelector('#adjQty').value);
-          if (!qty) { el.querySelector('#adjQty').focus(); return; }
+          const qty = MMB.num(qtyEl.value);
+          if (!qty) { qtyEl.focus(); MMB.toast(t('stock.adjustQtyRequired'), 'error'); return; }
           const res = MMB.saveAdjustment({
-            productId: el.querySelector('#adjProduct').value, qtyKg: qty,
+            productId: productEl.value, qtyKg: qty, rate: MMB.num(rateEl.value),
             reason: el.querySelector('#adjReason').value, note: el.querySelector('#adjNote').value,
             date: el.querySelector('#adjDate').value, time: el.querySelector('#adjTime').value
           });
-          if (!res.ok) { MMB.toast(t('common.error'), 'error'); return; }
+          if (!res.ok) {
+            if (res.error === 'stock') MMB.toast(t('stock.adjustTooMuch', { qty: MMB.qty(res.available, 'kg') }), 'error');
+            else MMB.toast(t('common.error'), 'error');
+            return;
+          }
           MMB.toast(t('stock.adjustSaved'));
           api.close();
           MMB.rerender();
@@ -833,7 +886,7 @@
         function render() {
           const list = el.querySelector('#adjList');
           const rows = MMB.db.adjustments.slice().sort(function (a, b) {
-            return (b.date + b.time).localeCompare(a.date + a.time);
+            return ((b.date || '') + ' ' + (b.time || '')).localeCompare((a.date || '') + ' ' + (a.time || ''));
           });
           if (!rows.length) {
             list.innerHTML = MMB.emptyHTML('scale', t('stock.noAdjustments'), '');
@@ -842,17 +895,21 @@
           list.innerHTML = rows.map(function (a) {
             const p = MMB.product(a.productId);
             const qty = MMB.num(a.qtyKg);
+            const rate = MMB.num(a.rate);
             return '<div class="product-line"><div class="thumb">' + MMB.icon('scale') + '</div>' +
               '<div class="row-main"><div class="pname">' + MMB.esc(p ? p.name : '—') + '</div>' +
-              '<div class="pmeta">' + MMB.fmtDate(a.date) + ' · ' + t('stock.reason.' + (a.reason || 'other')) + (a.note ? ' · ' + MMB.esc(a.note) : '') + '</div></div>' +
+              '<div class="pmeta">' + MMB.fmtDate(a.date) + ' · ' + t('stock.reason.' + (a.reason || 'other')) +
+              (rate > 0 ? ' · ' + MMB.money(rate) + ' ' + t('stock.ratePerKgShort') : '') +
+              (a.note ? ' · ' + MMB.esc(a.note) : '') + '</div></div>' +
               '<div class="pqty num" style="color:' + (qty > 0 ? 'var(--green-2)' : 'var(--red)') + '">' + (qty > 0 ? '+' : '−') + MMB.qty(Math.abs(qty), 'kg') + '</div>' +
-              '<button class="icon-btn sm danger" data-del-adj="' + a.id + '" aria-label="' + MMB.esc(t('common.delete')) + '">' + MMB.icon('trash') + '</button></div>';
+              (MMB.isAdmin() ? '<button class="icon-btn sm danger" data-del-adj="' + a.id + '" aria-label="' + MMB.esc(t('common.delete')) + '">' + MMB.icon('trash') + '</button>' : '') + '</div>';
           }).join('');
           list.querySelectorAll('[data-del-adj]').forEach(function (b) {
             b.addEventListener('click', async function () {
               const ok = await MMB.confirm({ title: t('common.delete'), body: t('common.cannotUndo'), danger: true, confirmText: t('common.delete') });
               if (!ok) return;
-              MMB.deleteAdjustment(b.getAttribute('data-del-adj'));
+              const res = MMB.deleteAdjustment(b.getAttribute('data-del-adj'));
+              if (!res.ok) { MMB.toast(t('stock.adjustDeleteBlocked'), 'error'); return; }
               MMB.toast(t('common.deleted'));
               render();
             });
@@ -863,8 +920,63 @@
     });
   }
 
+  function openAdjustmentDetails(a) {
+    const p = MMB.product(a.productId);
+    const qty = MMB.num(a.qtyKg);
+    const rate = MMB.num(a.rate);
+    const sd = MMB.computeStock();
+    const st = sd.states[a.productId] || { avg: 0 };
+    const cost = rate > 0 ? rate : (st.avg || 0);
+    const value = Math.round(Math.abs(qty) * cost * 100) / 100;
+    const body = '<div class="grid cols-2" style="gap:8px">' +
+      '<div class="month-cell"><div class="k">' + t('stock.product') + '</div><div class="v" style="font-size:13px">' + MMB.esc(p ? p.name : '—') + '</div></div>' +
+      '<div class="month-cell"><div class="k">' + t('stock.adjustQty') + '</div><div class="v ' + (qty > 0 ? 'positive' : 'negative') + '" style="font-size:13px">' + (qty > 0 ? '+' : '−') + MMB.qty(Math.abs(qty), 'kg') + '</div></div>' +
+      '<div class="month-cell"><div class="k">' + t('stock.adjustReason') + '</div><div class="v" style="font-size:13px">' + t('stock.reason.' + (a.reason || 'other')) + '</div></div>' +
+      '<div class="month-cell"><div class="k">' + t('common.date') + '</div><div class="v" style="font-size:13px">' + MMB.fmtDate(a.date) + ' · ' + MMB.fmtTime(a.time) + '</div></div>' +
+      (value > 0.0049
+        ? '<div class="month-cell"><div class="k">' + t('stock.rate') + '</div><div class="v" style="font-size:13px">' + MMB.money(cost) + ' ' + t('stock.ratePerKgShort') + '</div></div>' +
+        '<div class="month-cell"><div class="k">' + t('stock.stockValue') + '</div><div class="v" style="font-size:13px">' + MMB.money(value) + '</div></div>'
+        : '') +
+      (a.note ? '<div class="month-cell wide"><div class="k">' + t('common.notes') + '</div><div class="v" style="font-size:13px">' + MMB.esc(a.note) + '</div></div>' : '') +
+      '</div>' +
+      (qty > 0 && MMB.isAdmin()
+        ? '<div class="field mt-16"><label class="label">' + t('stock.rate') + ' <span class="opt">' + t('stock.ratePerKgShort') + '</span></label>' +
+        '<div class="row-flex gap-8"><input class="input num" id="adjNewRate" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" value="' + (rate || st.avg || '') + '">' +
+        '<button class="btn btn-soft" id="adjRateSave">' + MMB.icon('check') + t('common.save') + '</button></div>' +
+        '<div class="hint">' + t('stock.adjustRateHint') + '</div></div>'
+        : '');
+    MMB.openSheet({
+      title: t('stock.adjust'),
+      subtitle: MMB.fmtDateTime(a.date, a.time),
+      body: body,
+      footer: '<button class="btn btn-ghost" data-close>' + t('common.close') + '</button>' +
+        (MMB.isAdmin() ? '<button class="btn btn-danger" id="adjDelete">' + MMB.icon('trash') + t('common.delete') + '</button>' : ''),
+      onMount: function (el, api) {
+        const rateSave = el.querySelector('#adjRateSave');
+        if (rateSave) rateSave.addEventListener('click', function () {
+          const res = MMB.updateAdjustmentRate(a.id, el.querySelector('#adjNewRate').value);
+          if (!res.ok) { MMB.toast(t('common.error'), 'error'); return; }
+          MMB.toast(t('common.saved'));
+          api.close();
+          MMB.rerender();
+        });
+        const adjDelete = el.querySelector('#adjDelete');
+        if (adjDelete) adjDelete.addEventListener('click', async function () {
+          const ok = await MMB.confirm({ title: t('common.delete'), body: t('common.cannotUndo'), danger: true, confirmText: t('common.delete') });
+          if (!ok) return;
+          const res = MMB.deleteAdjustment(a.id);
+          if (!res.ok) { MMB.toast(t('stock.adjustDeleteBlocked'), 'error'); return; }
+          MMB.toast(t('common.deleted'));
+          api.close();
+          MMB.rerender();
+        });
+      }
+    });
+  }
+
   /* ── products sheet ───────────────────────────────────────── */
   function openProductsSheet() {
+    if (!MMB.isAdmin()) { MMB.toast(t('users.readonly'), 'error'); return; }
     const sheet = MMB.openSheet({
       title: t('stock.products'),
       body: '<div id="prodList"></div>',
@@ -904,6 +1016,7 @@
   MMB.views.stock = {
     render: function (root, params) {
       tab = (params && params.tab) === 'out' ? 'out' : 'in';
+      const admin = MMB.isAdmin();
       const sd = MMB.computeStock();
       const totals = MMB.stockTotals(sd);
       const sales = MMB.db.sales.slice().sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
@@ -914,19 +1027,21 @@
       purchases.forEach(function (p) { dupPurchases[p.no] = (dupPurchases[p.no] || 0) + 1; });
       const purchaseReturns = MMB.db.returns.filter(function (r) { return r.type === 'purchase'; });
       const saleReturnsList = MMB.db.returns.filter(function (r) { return r.type === 'sale'; });
-      // Stock In cards are hidden once a product's stock reaches zero; they
-      // come back automatically when a sale is edited, deleted or returned.
+      // "All" shows every purchase line; "In stock" hides batches whose
+      // product has nothing left. Adjustments are always listed.
       const hasStock = function (productId) {
         const st = sd.states[productId];
         return !!(st && st.qty > 0.0001);
       };
-      let inCardCount = purchaseReturns.length;
+      let inCardCount = purchaseReturns.length + MMB.db.adjustments.length;
       purchases.forEach(function (p) {
-        (p.lines || []).forEach(function (l) { if (hasStock(l.productId)) inCardCount++; });
+        (p.lines || []).forEach(function (l) {
+          if (inFilter === 'all' || hasStock(l.productId)) inCardCount++;
+        });
       });
       // Product totals for the "sold X of Y" strip on each Stock In card.
       const prodStats = {};
-      MMB.db.products.forEach(function (p) { prodStats[p.id] = { bought: 0, sold: 0, left: 0 }; });
+      MMB.searchProducts('').forEach(function (p) { prodStats[p.id] = { bought: 0, sold: 0, left: 0 }; });
       function bumpStat(id, field, delta) { if (prodStats[id]) prodStats[id][field] += delta; }
       MMB.db.purchases.forEach(function (p) {
         (p.lines || []).forEach(function (l) { bumpStat(l.productId, 'bought', MMB.num(l.qtyKg)); });
@@ -939,6 +1054,11 @@
           if (r.type === 'purchase') bumpStat(l.productId, 'bought', -MMB.num(l.qtyKg));
           else if (r.type === 'sale') bumpStat(l.productId, 'sold', -MMB.num(l.qtyKg));
         });
+      });
+      // Positive adjustments brought stock in, so they belong in "bought".
+      MMB.db.adjustments.forEach(function (a) {
+        const q = MMB.num(a.qtyKg);
+        if (q > 0) bumpStat(a.productId, 'bought', q);
       });
       Object.keys(prodStats).forEach(function (id) {
         const st = sd.states[id];
@@ -953,9 +1073,13 @@
 
         '<div class="stock-summary">' +
         '<span class="pill">' + MMB.icon('scale') + t('stock.stockValue') + ' <strong>' + MMB.money(totals.value) + '</strong></span>' +
+        (tab === 'in' ? '<div class="sort-toggle stock-in-filter" id="stockInFilter">' +
+          '<button data-in-filter="all" class="' + (inFilter === 'all' ? 'active' : '') + '">' + t('common.all') + '</button>' +
+          '<button data-in-filter="stock" class="' + (inFilter === 'stock' ? 'active' : '') + '">' + t('stock.inStock') + '</button>' +
+          '</div>' : '') +
         '<div class="stock-tools">' +
-        '<button class="icon-btn sm" id="stockProducts" title="' + MMB.esc(t('stock.manageProducts')) + '" aria-label="' + MMB.esc(t('stock.manageProducts')) + '">' + MMB.icon('package') + '</button>' +
-        '<button class="icon-btn sm" id="stockAdjust" title="' + MMB.esc(t('stock.adjust')) + '" aria-label="' + MMB.esc(t('stock.adjust')) + '">' + MMB.icon('scale') + '</button>' +
+        (admin ? '<button class="icon-btn sm" id="stockProducts" title="' + MMB.esc(t('stock.manageProducts')) + '" aria-label="' + MMB.esc(t('stock.manageProducts')) + '">' + MMB.icon('package') + '</button>' +
+          '<button class="icon-btn sm" id="stockAdjust" title="' + MMB.esc(t('stock.adjust')) + '" aria-label="' + MMB.esc(t('stock.adjust')) + '">' + MMB.icon('scale') + '</button>' : '') +
         '<button class="icon-btn sm" id="stockAdjustHistory" title="' + MMB.esc(t('stock.adjustHistory')) + '" aria-label="' + MMB.esc(t('stock.adjustHistory')) + '">' + MMB.icon('clock') + '</button>' +
         '</div></div>' +
 
@@ -969,41 +1093,68 @@
         const match = function (s) { return !q || s.toLowerCase().indexOf(q) !== -1; };
 
         if (tab === 'in') {
-          const rets = MMB.db.returns.filter(function (r) { return r.type === 'purchase'; }).sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
+          const rets = MMB.db.returns.filter(function (r) { return r.type === 'purchase'; }).sort(function (a, b) { return ((b.date || '') + ' ' + (b.time || '')).localeCompare((a.date || '') + ' ' + (a.time || '')); });
+          const adjustments = MMB.db.adjustments.slice().sort(function (a, b) {
+            return ((b.date || '') + ' ' + (b.time || '')).localeCompare((a.date || '') + ' ' + (a.time || ''));
+          });
           // One card per purchased product line. Lines from different purchases
           // are never merged, even when the product is the same.
           const items = [];
           purchases.forEach(function (p) {
             (p.lines || []).forEach(function (l, i) {
-              if (!hasStock(l.productId)) return;
+              if (inFilter === 'stock' && !hasStock(l.productId)) return;
               items.push({ kind: 'line', date: p.date, time: p.time, obj: p, line: l, lineIndex: i });
             });
           });
           rets.forEach(function (r) {
             items.push({ kind: 'return', date: r.date, time: r.time, obj: r });
           });
-          items.sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); });
+          adjustments.forEach(function (a) {
+            items.push({ kind: 'adjustment', date: a.date, time: a.time, obj: a });
+          });
+          items.sort(function (a, b) { return ((b.date || '') + ' ' + (b.time || '')).localeCompare((a.date || '') + ' ' + (a.time || '')); });
 
           const filtered = items.filter(function (it) {
             if (it.kind === 'line') {
               const p = it.obj;
               return match([p.no, MMB.accountName(p.supplierId), it.line.name].join(' '));
             }
-            const r = it.obj;
-            const hay = [r.no, MMB.accountName(r.supplierId)].concat((r.lines || []).map(function (l) { return l.name; })).join(' ');
+            if (it.kind === 'return') {
+              const r = it.obj;
+              const hay = [r.no, MMB.accountName(r.supplierId)].concat((r.lines || []).map(function (l) { return l.name; })).join(' ');
+              return match(hay);
+            }
+            const a = it.obj;
+            const p = MMB.product(a.productId);
+            const hay = [p ? p.name : '', t('stock.reason.' + (a.reason || 'other')), a.note || ''].join(' ');
             return match(hay);
           });
 
-          if (!purchases.length && !rets.length) {
+          if (!purchases.length && !rets.length && !adjustments.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('package', t('stock.emptyIn'), t('stock.emptyInHint'),
-              '<button class="btn btn-primary" data-new="purchase">' + MMB.icon('plus') + t('stock.newPurchase') + '</button>') + '</div>';
+              (admin ? '<button class="btn btn-primary" data-new="purchase">' + MMB.icon('plus') + t('stock.newPurchase') + '</button>' : '')) + '</div>';
           } else if (!items.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('package', t('stock.noStockOnHand'), t('stock.noStockHint'),
-              '<button class="btn btn-primary" data-new="purchase">' + MMB.icon('plus') + t('stock.newPurchase') + '</button>') + '</div>';
+              (admin ? '<button class="btn btn-primary" data-new="purchase">' + MMB.icon('plus') + t('stock.newPurchase') + '</button>' : '')) + '</div>';
           } else if (!filtered.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('search', t('accounts.noResults'), '') + '</div>';
           } else {
             listEl.innerHTML = '<div class="card" style="padding:4px 14px"><div class="list">' + filtered.map(function (it) {
+              if (it.kind === 'adjustment') {
+                const a = it.obj;
+                const p = MMB.product(a.productId);
+                const qty = MMB.num(a.qtyKg);
+                const rate = MMB.num(a.rate);
+                const positive = qty > 0;
+                return '<button class="list-row" data-adjustment="' + a.id + '">' +
+                  '<div class="avatar ' + (positive ? '' : 'red') + '" style="border-radius:12px">' + MMB.icon('scale') + '</div>' +
+                  '<div class="row-main"><div class="entry-when">' + MMB.esc(MMB.fmtDateTime(a.date, a.time)) + '</div>' +
+                  '<div class="row-title">' + MMB.esc(p ? p.name : '—') + ' <span class="badge ' + (positive ? 'badge-blue' : 'badge-red') + '">' + t('stock.adjust') + '</span></div>' +
+                  '<div class="row-sub">' + t('stock.reason.' + (a.reason || 'other')) + (a.note ? '<span class="sep"></span>' + MMB.esc(a.note) : '') + '</div></div>' +
+                  '<div class="row-end"><div class="row-amount ' + (positive ? 'positive' : 'negative') + ' num">' + (positive ? '+' : '−') + MMB.qty(Math.abs(qty), 'kg') + '</div>' +
+                  '<div class="row-note">' + (rate > 0 ? MMB.money(rate) + ' ' + t('stock.ratePerKgShort') : t('stock.adjust')) + '</div></div>' +
+                  MMB.icon('chevron-right', 'row-arrow') + '</button>';
+              }
               if (it.kind === 'return') {
                 const r = it.obj;
                 return '<button class="list-row" data-return="' + r.id + '">' +
@@ -1032,6 +1183,12 @@
           }
 
           listEl.querySelectorAll('[data-purchase]').forEach(function (b) { b.addEventListener('click', function () { openPurchaseDetails(b.getAttribute('data-purchase'), Number(b.getAttribute('data-line'))); }); });
+          listEl.querySelectorAll('[data-adjustment]').forEach(function (b) {
+            b.addEventListener('click', function () {
+              const a = MMB.db.adjustments.find(function (x) { return x.id === b.getAttribute('data-adjustment'); });
+              if (a) openAdjustmentDetails(a);
+            });
+          });
           listEl.querySelectorAll('[data-return]').forEach(function (b) {
             b.addEventListener('click', function () {
               const r = MMB.db.returns.find(function (x) { return x.id === b.getAttribute('data-return'); });
@@ -1080,7 +1237,7 @@
           });
           if (!sales.length && !saleReturnsList.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('receipt', t('stock.emptyOut'), t('stock.emptyOutHint'),
-              '<button class="btn btn-primary" data-new="sale">' + MMB.icon('plus') + t('stock.newSale') + '</button>') + '</div>';
+              (admin ? '<button class="btn btn-primary" data-new="sale">' + MMB.icon('plus') + t('stock.newSale') + '</button>' : '')) + '</div>';
           } else if (!filtered.length) {
             listEl.innerHTML = '<div class="card">' + MMB.emptyHTML('search', t('accounts.noResults'), '') + '</div>';
           } else {
@@ -1119,7 +1276,7 @@
                 '<div class="row-sub">' + MMB.esc(MMB.accountName(s.customerId)) + (s.brokerId ? ' · ' + MMB.esc(MMB.accountName(s.brokerId)) : '') + '</div></div>' +
                 '<div class="row-end"><div class="row-amount">' + MMB.money(l.amount) + '</div>' +
                 '<div class="row-note"><span class="num">' + MMB.qty(l.qtyKg, 'kg') + ' · ' + t('stock.sellRate') + ' ' + MMB.money(l.rate, { bare: true }) + '</span></div>' +
-                '<div class="row-pnl ' + pnlCls + '">' + t('stock.pnl') + ' <span class="num">' + pnlText + '</span></div></div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
+                (admin ? '<div class="row-pnl ' + pnlCls + '">' + t('stock.pnl') + ' <span class="num">' + pnlText + '</span></div>' : '') + '</div>' + MMB.icon('chevron-right', 'row-arrow') + '</button>';
             }).join('') + '</div></div>';
           }
           listEl.querySelectorAll('[data-sale]').forEach(function (b) { b.addEventListener('click', function () { openSaleDetails(b.getAttribute('data-sale')); }); });
@@ -1135,12 +1292,23 @@
       }
 
       root.querySelector('#stockSearch').addEventListener('input', function (e) { stockSearch = e.target.value; renderList(); });
-      root.querySelector('#stockProducts').addEventListener('click', openProductsSheet);
-      root.querySelector('#stockAdjust').addEventListener('click', function () { MMB.openAdjustmentForm(); });
+      const inFilterEl = root.querySelector('#stockInFilter');
+      if (inFilterEl) {
+        inFilterEl.querySelectorAll('[data-in-filter]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            inFilter = b.getAttribute('data-in-filter') === 'stock' ? 'stock' : 'all';
+            MMB.rerender();
+          });
+        });
+      }
+      const productsBtn = root.querySelector('#stockProducts');
+      if (productsBtn) productsBtn.addEventListener('click', openProductsSheet);
+      const adjustBtn = root.querySelector('#stockAdjust');
+      if (adjustBtn) adjustBtn.addEventListener('click', function () { MMB.openAdjustmentForm(); });
       root.querySelector('#stockAdjustHistory').addEventListener('click', openAdjustmentsSheet);
 
       const fabLabel = tab === 'in' ? t('stock.newPurchase') : t('stock.newSale');
-      MMB.setFAB('<button class="fab" id="stockFab" aria-label="' + MMB.esc(fabLabel) + '" title="' + MMB.esc(fabLabel) + '">' + MMB.icon('plus') + '</button>');
+      MMB.setFAB(admin ? '<button class="fab" id="stockFab" aria-label="' + MMB.esc(fabLabel) + '" title="' + MMB.esc(fabLabel) + '">' + MMB.icon('plus') + '</button>' : '');
       const fab = document.getElementById('stockFab');
       if (fab) fab.addEventListener('click', function () { if (tab === 'in') MMB.openPurchaseForm(); else MMB.openSaleForm(); });
 

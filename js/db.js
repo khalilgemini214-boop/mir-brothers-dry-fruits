@@ -3,8 +3,8 @@
   const MMB = window.MMB;
   const KEY = 'mmb_dryfruits_v1';
   const SCHEMA = 2;
-  const COLLECTIONS = ['accounts', 'products', 'ledger', 'sales', 'purchases', 'returns', 'adjustments'];
-  const SHARED_SETTINGS = ['shop', 'commissionRate', 'lowStockKg', 'defaultCartonKg'];
+  const COLLECTIONS = ['users', 'accounts', 'products', 'ledger', 'sales', 'purchases', 'returns', 'adjustments'];
+  const SHARED_SETTINGS = ['shop', 'commissionRate', 'lowStockKg', 'defaultCartonKg', 'bardanaRate', 'billLang'];
 
   // Existing installs still carry the old shop profile in localStorage.
   // Upgrade it in place, but only when the fields are untouched defaults.
@@ -91,6 +91,8 @@
         commissionRate: 0.45,
         lowStockKg: 5,
         defaultCartonKg: 10,
+        bardanaRate: 0,
+        billLang: 'both',
         billCounter: 227,
         purchaseCounter: 1,
         pinSalt: null,
@@ -98,6 +100,7 @@
         backupLastAt: null,
         updates: { feedUrl: '', autoCheck: true, lastCheckedAt: null }
       },
+      users: [],
       accounts: [],
       products: [],
       ledger: [],
@@ -162,6 +165,22 @@
       });
     });
 
+    // Every install starts with one full-access owner profile. User accounts
+    // are app profiles (name + role + optional PIN), separate from Firebase.
+    const liveUsers = (out.users || []).filter(function (u) { return u && !u.deleted; });
+    if (!liveUsers.length) {
+      out.users = [{ id: 'usr_owner', name: 'Owner', role: 'admin', pinSalt: null, pinHash: null, seeded: true, createdAt: now, updatedAt: now }];
+    } else {
+      liveUsers.forEach(function (u) {
+        if (u.role !== 'viewer') u.role = 'admin';
+        if (u.pinSalt === undefined) u.pinSalt = null;
+        if (u.pinHash === undefined) u.pinHash = null;
+      });
+      if (!liveUsers.some(function (u) { return u.role === 'admin'; })) {
+        liveUsers[0].role = 'admin';
+      }
+    }
+
     // Baseline for the change diff. Only records the diff has never seen are
     // added, so a pending edit survives a reload.
     COLLECTIONS.forEach(function (name) {
@@ -181,6 +200,10 @@
     COLLECTIONS.forEach(function (name) {
       (out[name] || []).forEach(function (rec) {
         if (!rec || !rec.id) return;
+        // A freshly seeded owner profile stays local until it is edited or a
+        // user is added; this avoids two devices overwriting each other's
+        // owner PIN on their first sync.
+        if (name === 'users' && rec.seeded) return;
         out.sync.dirty[name + ':' + rec.id] = {
           op: 'set', at: now, entity: name,
           manual: name === 'ledger' ? rec.refType === 'manual' : false,
@@ -205,6 +228,8 @@
     out.settings.purchaseCounter = Math.max(1, Number(out.settings.purchaseCounter) || 1);
     out.settings.commissionRate = Number(out.settings.commissionRate);
     if (!isFinite(out.settings.commissionRate)) out.settings.commissionRate = 0.45;
+    out.settings.bardanaRate = Math.max(0, Number(out.settings.bardanaRate) || 0);
+    out.settings.billLang = ['en', 'ur'].indexOf(out.settings.billLang) !== -1 ? out.settings.billLang : 'both';
     out.app = 'mmb-dryfruits';
     out.version = 1;
     out.schema = SCHEMA;
@@ -339,6 +364,8 @@
   MMB.sharedSettingsHash = function (db) { return hashRecord(sharedSettingsOf(db || MMB.db)); };
 
   MMB.resetData = function () {
+    if (!MMB.isAdmin()) return;
+    if (MMB.clearActiveUser) MMB.clearActiveUser();
     try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
     MMB.db = defaults();
     // A cleared device must not push default settings over the cloud copy.
@@ -348,6 +375,138 @@
   };
 
   MMB.settings = function () { return MMB.db.settings; };
+
+  /* ── users (app profiles + roles) ─────────────────────────── */
+  const ACTIVE_USER_KEY = 'mmb_active_user_v1';
+
+  MMB.users = function () {
+    return (MMB.db.users || []).filter(function (u) { return u && !u.deleted; });
+  };
+  MMB.user = function (id) {
+    return MMB.users().find(function (u) { return u.id === id; }) || null;
+  };
+  MMB.currentUser = function () {
+    let id = null;
+    try { id = localStorage.getItem(ACTIVE_USER_KEY); } catch (e) { /* ignore */ }
+    let u = id ? MMB.user(id) : null;
+    if (!u) {
+      if (id) return { id: id, name: '?', role: 'viewer', missing: true, pinSalt: null, pinHash: null };
+      const live = MMB.users();
+      u = live.find(function (x) { return x.role === 'admin'; }) || live[0] || null;
+    }
+    return u || { id: 'usr_owner', name: 'Owner', role: 'admin', pinSalt: null, pinHash: null };
+  };
+  MMB.hasActiveUser = function () {
+    try {
+      const id = localStorage.getItem(ACTIVE_USER_KEY);
+      return !!(id && MMB.user(id));
+    } catch (e) { return false; }
+  };
+  MMB.adminHasPin = function () {
+    return MMB.users().some(function (u) { return u.role === 'admin' && MMB.userHasPin(u); });
+  };
+  MMB.userHasPin = function (u) { return !!(u && u.pinSalt && u.pinHash); };
+  MMB.isAdmin = function () { return MMB.currentUser().role !== 'viewer'; };
+  MMB.isViewer = function () { return !MMB.isAdmin(); };
+  MMB.setActiveUser = function (id) {
+    const u = MMB.user(id);
+    if (!u) return false;
+    try { localStorage.setItem(ACTIVE_USER_KEY, u.id); } catch (e) { /* ignore */ }
+    return true;
+  };
+  MMB.clearActiveUser = function () {
+    try { localStorage.removeItem(ACTIVE_USER_KEY); } catch (e) { /* ignore */ }
+  };
+  MMB.verifyUserPin = async function (user, pin) {
+    if (!MMB.userHasPin(user)) return true;
+    const hash = await MMB.asyncHash(user.pinSalt + ':' + pin);
+    return hash === user.pinHash;
+  };
+  async function applyUserPin(rec, pin) {
+    if (pin == null || pin === '') return;
+    const salt = MMB.salt();
+    rec.pinSalt = salt;
+    rec.pinHash = await MMB.asyncHash(salt + ':' + pin);
+  }
+  MMB.addUser = async function (data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
+    const name = String(data.name || '').trim();
+    if (!name) return { ok: false, error: 'name' };
+    const role = data.role === 'viewer' ? 'viewer' : 'admin';
+    if (role === 'viewer' && !MMB.adminHasPin()) return { ok: false, error: 'ownerPinRequired' };
+    const pin = String(data.pin || '');
+    if (role === 'admin' && !pin) return { ok: false, error: 'pinRequired' };
+    if (pin && !/^\d{4,6}$/.test(pin)) return { ok: false, error: 'pin' };
+    const now = new Date().toISOString();
+    const u = { id: MMB.uid('usr'), name: name, role: role, pinSalt: null, pinHash: null, createdAt: now, updatedAt: now };
+    await applyUserPin(u, pin);
+    MMB.db.users.push(u);
+    MMB.save();
+    return { ok: true, user: u };
+  };
+  MMB.updateUser = async function (id, data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
+    const u = MMB.user(id);
+    if (!u) return { ok: false, error: 'missing' };
+    const name = String(data.name || '').trim();
+    const targetRole = (data.role === 'viewer' || data.role === 'admin') ? data.role : u.role;
+    const pin = data.pin != null ? String(data.pin) : '';
+    const clearPin = !!data.clearPin;
+
+    if (u.role === 'admin' && targetRole === 'viewer' &&
+      !MMB.users().some(function (x) { return x.id !== u.id && x.role === 'admin'; })) {
+      return { ok: false, error: 'lastAdmin' };
+    }
+    if (targetRole === 'viewer' && u.role !== 'viewer') {
+      const otherAdminPin = MMB.users().some(function (x) {
+        return x.id !== u.id && x.role === 'admin' && MMB.userHasPin(x);
+      });
+      if (!otherAdminPin) return { ok: false, error: 'ownerPinRequired' };
+    }
+    if (u.role !== 'admin' && targetRole === 'admin') {
+      const willHavePin = MMB.userHasPin(u) || (pin !== '' && !clearPin);
+      if (!willHavePin) return { ok: false, error: 'pinRequired' };
+    }
+    if (clearPin && targetRole === 'admin' &&
+      MMB.users().some(function (x) { return x.id !== u.id; })) {
+      return { ok: false, error: 'ownerPinRequired' };
+    }
+    if (pin && !clearPin && !/^\d{4,6}$/.test(pin)) return { ok: false, error: 'pin' };
+
+    if (name) u.name = name;
+    u.role = targetRole;
+    if (clearPin) {
+      u.pinSalt = null;
+      u.pinHash = null;
+    } else if (pin) {
+      await applyUserPin(u, pin);
+    }
+    delete u.seeded;
+    u.updatedAt = new Date().toISOString();
+    MMB.save();
+    return { ok: true, user: u };
+  };
+  MMB.deleteUser = function (id) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
+    const u = MMB.user(id);
+    if (!u) return { ok: false, error: 'missing' };
+    if (MMB.currentUser().id === id) return { ok: false, error: 'self' };
+    if (u.role === 'admin' && MMB.users().filter(function (x) { return x.role === 'admin'; }).length <= 1) {
+      return { ok: false, error: 'lastAdmin' };
+    }
+    if (u.role === 'admin' && MMB.userHasPin(u)) {
+      const otherAdminPin = MMB.users().some(function (x) {
+        return x.id !== u.id && x.role === 'admin' && MMB.userHasPin(x);
+      });
+      const otherUsers = MMB.users().some(function (x) { return x.id !== u.id; });
+      if (!otherAdminPin && otherUsers) return { ok: false, error: 'ownerPinRequired' };
+    }
+    u.deleted = true;
+    u.deletedAt = new Date().toISOString();
+    u.updatedAt = u.deletedAt;
+    MMB.save();
+    return { ok: true };
+  };
   MMB.accounts = function (type) {
     const list = MMB.db.accounts.filter(function (a) { return !a.deleted; });
     return type ? list.filter(function (a) { return a.type === type; }) : list;
@@ -362,6 +521,7 @@
 
   /* ── accounts ─────────────────────────────────────────────── */
   MMB.addAccount = function (data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const name = String(data.name || '').trim();
     if (!name) return { ok: false, error: 'name' };
     const a = {
@@ -377,6 +537,7 @@
   };
 
   MMB.updateAccount = function (id, data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const a = MMB.account(id);
     if (!a) return { ok: false };
     a.name = String(data.name || a.name).trim();
@@ -395,6 +556,7 @@
   };
 
   MMB.deleteAccount = function (id) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     if (MMB.accountIsUsed(id)) return { ok: false, reason: 'used' };
     const a = MMB.account(id);
     if (!a) return { ok: false };
@@ -464,6 +626,7 @@
 
   /* ── manual ledger entries ────────────────────────────────── */
   MMB.addEntry = function (data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     const acc = MMB.account(data.accountId);
     if (!acc) return { ok: false, error: 'account' };
@@ -499,6 +662,7 @@
   };
 
   MMB.updateEntry = function (id, data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     const e = d.ledger.find(function (x) { return x.id === id; });
     if (!e || e.refType !== 'manual') return { ok: false, error: 'locked' };
@@ -539,6 +703,7 @@
   };
 
   MMB.deleteEntry = function (id) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     const e = d.ledger.find(function (x) { return x.id === id; });
     if (!e) return { ok: false };
@@ -574,6 +739,7 @@
   };
 
   MMB.addProduct = function (name, cartonKg) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const n = String(name || '').trim();
     if (!n) return { ok: false };
     const existing = MMB.findProduct(n);
@@ -592,6 +758,7 @@
   };
 
   MMB.updateProduct = function (id, data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const p = MMB.product(id);
     if (!p) return { ok: false };
     if (data.name != null) p.name = String(data.name).trim() || p.name;
@@ -602,6 +769,7 @@
   };
 
   MMB.addAlias = function (id, text) {
+    if (!MMB.isAdmin()) return;
     const p = MMB.product(id);
     const n = String(text || '').trim();
     if (!p || !n) return;
@@ -622,6 +790,7 @@
   };
 
   MMB.deleteProduct = function (id) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     if (MMB.productIsUsed(id)) return { ok: false, error: 'used' };
     const p = MMB.product(id);
     if (!p) return { ok: false };
@@ -660,7 +829,11 @@
       });
     });
     d.adjustments.forEach(function (a) {
-      events.push({ at: (a.date || '') + ' ' + (a.time || '00:00'), createdAt: a.createdAt || '', kind: 'adjust', productId: a.productId, qty: MMB.num(a.qtyKg), refId: a.id });
+      events.push({
+        at: (a.date || '') + ' ' + (a.time || '00:00'), createdAt: a.createdAt || '',
+        kind: 'adjust', productId: a.productId, qty: MMB.num(a.qtyKg),
+        rate: Math.max(0, MMB.num(a.rate)), refId: a.id
+      });
     });
 
     events.sort(function (a, b) {
@@ -717,12 +890,33 @@
         st.avg = st.qty > 0 ? st.value / st.qty : perKg;
         returnCogs[ev.refId] = (returnCogs[ev.refId] || 0) + cogs;
       } else if (ev.kind === 'adjust') {
-        const val = ev.qty * (st.avg || 0);
-        st.qty += ev.qty;
-        st.value += val;
-        if (st.qty <= 0) st.value = 0;
-        else st.avg = st.value / st.qty;
-        adjResult.push({ id: ev.refId, date: ev.at.slice(0, 10), amount: -val });
+        const q = MMB.num(ev.qty);
+        if (q >= 0) {
+          // Adding stock must increase inventory only. Counting its value as
+          // profit here was wrong: it made a positive adjustment look like
+          // earnings and left opening stock worth Rs 0.
+          const rate = MMB.num(ev.rate) > 0 ? MMB.num(ev.rate) : (st.avg || 0);
+          const hadQty = st.qty;
+          st.qty += q;
+          if (hadQty <= 0) {
+            st.value = Math.max(0, st.qty) * rate;
+            st.avg = rate;
+          } else {
+            st.value += q * rate;
+            st.avg = st.qty > 0 ? st.value / st.qty : rate;
+          }
+        } else {
+          // Clamp the loss to the stock actually on hand, so old over-removals
+          // cannot report a loss larger than the inventory value.
+          const removeQty = Math.min(Math.abs(q), Math.max(0, st.qty));
+          const loss = removeQty * (st.avg || 0);
+          st.qty += q;
+          st.value -= loss;
+          if (st.qty <= 0) st.value = 0;
+          else st.avg = st.value / st.qty;
+          // Only removals are an actual stock loss in the P&L.
+          adjResult.push({ id: ev.refId, date: ev.at.slice(0, 10), amount: loss });
+        }
       }
     });
 
@@ -787,6 +981,7 @@
   }
 
   MMB.saveSale = function (data, editId) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     if (editId && d.returns.some(function (r) { return r.type === 'sale' && r.saleId === editId; })) {
       return { ok: false, error: 'returns' };
@@ -847,6 +1042,7 @@
   };
 
   MMB.deleteSale = function (id) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     const s = d.sales.find(function (x) { return x.id === id; });
     if (!s) return { ok: false };
@@ -1009,6 +1205,7 @@
   };
 
   MMB.savePurchase = function (data, editId) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     if (editId && d.returns.some(function (r) { return r.type === 'purchase' && r.purchaseId === editId; })) {
       return { ok: false, error: 'returns' };
@@ -1060,6 +1257,7 @@
   };
 
   MMB.deletePurchase = function (id) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     if (MMB.purchaseReturns(id).length) return { ok: false, error: 'returns' };
     d.ledger = d.ledger.filter(function (e) { return !(e.refType === 'purchase' && e.refId === id); });
@@ -1077,6 +1275,7 @@
   };
 
   MMB.savePurchaseReturn = function (data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     const purchase = d.purchases.find(function (p) { return p.id === data.purchaseId; });
     if (!purchase) return { ok: false, error: 'purchase' };
@@ -1114,6 +1313,7 @@
   };
 
   MMB.deleteReturn = function (id) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     const r = d.returns.find(function (x) { return x.id === id; });
     if (!r) return { ok: false };
@@ -1137,6 +1337,7 @@
   };
 
   MMB.saveSaleReturn = function (data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     const sale = d.sales.find(function (s) { return s.id === data.saleId; });
     if (!sale) return { ok: false, error: 'sale' };
@@ -1193,6 +1394,7 @@
   };
 
   MMB.deleteSaleReturn = function (id) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     const r = d.returns.find(function (x) { return x.id === id && x.type === 'sale'; });
     if (!r) return { ok: false };
@@ -1203,12 +1405,20 @@
   };
 
   MMB.saveAdjustment = function (data) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     const d = MMB.db;
     if (!data.productId || !MMB.product(data.productId)) return { ok: false, error: 'product' };
     const qty = MMB.round(MMB.num(data.qtyKg), 3);
     if (!qty) return { ok: false, error: 'qty' };
+    if (qty < 0) {
+      const available = Math.max(0, MMB.round(MMB.productQty(data.productId), 3));
+      if (Math.abs(qty) > available + 0.0001) {
+        return { ok: false, error: 'stock', available: available };
+      }
+    }
+    const rate = Math.max(0, MMB.round(MMB.num(data.rate), 2));
     const a = {
-      id: MMB.uid('adj'), productId: data.productId, qtyKg: qty,
+      id: MMB.uid('adj'), productId: data.productId, qtyKg: qty, rate: rate,
       reason: data.reason || 'other', note: String(data.note || '').trim(),
       date: data.date || MMB.todayISO(), time: data.time || MMB.nowHM(),
       createdAt: new Date().toISOString()
@@ -1219,9 +1429,28 @@
   };
 
   MMB.deleteAdjustment = function (id) {
-    MMB.db.adjustments = MMB.db.adjustments.filter(function (a) { return a.id !== id; });
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
+    const a = MMB.db.adjustments.find(function (x) { return x.id === id; });
+    if (!a) return { ok: false, error: 'missing' };
+    const q = MMB.num(a.qtyKg);
+    if (q > 0) {
+      const current = MMB.productQty(a.productId);
+      if (current - q < -0.0001) {
+        return { ok: false, error: 'stock', available: Math.max(0, MMB.round(current, 3)) };
+      }
+    }
+    MMB.db.adjustments = MMB.db.adjustments.filter(function (x) { return x.id !== id; });
     MMB.save();
     return { ok: true };
+  };
+
+  MMB.updateAdjustmentRate = function (id, rate) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
+    const a = MMB.db.adjustments.find(function (x) { return x.id === id; });
+    if (!a) return { ok: false, error: 'missing' };
+    a.rate = Math.max(0, MMB.round(MMB.num(rate), 2));
+    MMB.save();
+    return { ok: true, adjustment: a };
   };
 
   /* ── metrics ──────────────────────────────────────────────── */
@@ -1403,12 +1632,14 @@
   };
 
   MMB.importJSON = function (obj) {
+    if (!MMB.isAdmin()) return { ok: false, error: 'readonly' };
     if (!obj || typeof obj !== 'object') return { ok: false };
     if (!Array.isArray(obj.accounts) || !Array.isArray(obj.ledger) || !Array.isArray(obj.sales)) return { ok: false };
     MMB.db = normalize(obj);
     // A restore is a fresh local baseline: never inherit sync bookkeeping from
     // a backup file, and queue every imported record for the next sync.
     MMB.db.sync = defaults().sync;
+    if (MMB.clearActiveUser) MMB.clearActiveUser();
     MMB.db.updatedAt = new Date().toISOString();
     MMB.save();
     return { ok: true };
@@ -1482,6 +1713,7 @@
   MMB.pinSet = function () { return !!(MMB.db.settings.pinHash && MMB.db.settings.pinSalt); };
 
   MMB.setPin = async function (pin) {
+    if (!MMB.isAdmin()) return;
     const salt = MMB.salt();
     const hash = await MMB.asyncHash(salt + ':' + pin);
     MMB.db.settings.pinSalt = salt;
@@ -1496,6 +1728,7 @@
   };
 
   MMB.removePin = function () {
+    if (!MMB.isAdmin()) return;
     MMB.db.settings.pinSalt = null;
     MMB.db.settings.pinHash = null;
     MMB.save();

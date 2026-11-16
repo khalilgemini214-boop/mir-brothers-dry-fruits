@@ -95,8 +95,17 @@
 
   function renderCurrent(scrollTop) {
     const route = parseRoute();
+    if (!MMB.isAdmin()) {
+      let safe = null;
+      if (route.name === 'settings') safe = 'dashboard';
+      else if (route.name === 'ledgerEntry') safe = 'account/' + route.accountId;
+      else if (route.name === 'saleForm') safe = 'stock/out';
+      else if (route.name === 'purchaseForm') safe = 'stock/in';
+      if (safe) { MMB.navigate(safe); return; }
+    }
     MMB.closeAll();
     MMB.setFAB('');
+    if (MMB.applyRoleUI) MMB.applyRoleUI();
     setNav(route);
     setTopbar(route);
     document.body.classList.toggle('mmb-ledger', route.name === 'account' || route.name === 'ledgerEntry');
@@ -125,6 +134,7 @@
     updateThemeButton();
     const langBtn = document.getElementById('langBtn');
     if (langBtn) langBtn.setAttribute('title', MMB.lang() === 'en' ? 'اردو' : 'English');
+    if (MMB.applyRoleUI) MMB.applyRoleUI();
   };
 
   function updateThemeButton() {
@@ -418,6 +428,8 @@
     });
     const topSale = document.getElementById('topSaleBtn');
     if (topSale) topSale.addEventListener('click', function () { MMB.openSaleForm(); });
+    const userBtn = document.getElementById('userBtn');
+    if (userBtn && MMB.openUserSwitcher) userBtn.addEventListener('click', function () { MMB.openUserSwitcher(); });
     const sideSale = document.getElementById('sideSaleBtn');
     if (sideSale) sideSale.addEventListener('click', function () { MMB.openSaleForm(); });
     const sidePurchase = document.getElementById('sidePurchaseBtn');
@@ -459,6 +471,10 @@
 
   function showAuth(message) {
     MMB.closeAll();
+    const gate = document.getElementById('userGate');
+    if (gate) gate.hidden = true;
+    MMB.refreshUserGate = null;
+    document.body.classList.remove('user-gating');
     const lock = document.getElementById('lockScreen');
     if (lock) lock.hidden = true;
     try { sessionStorage.removeItem('mmb_unlocked'); } catch (e) { /* ignore */ }
@@ -481,6 +497,19 @@
   }
 
   function startApp() {
+    if (MMB.showUserGate && MMB.hasActiveUser && !MMB.hasActiveUser()) {
+      const gate = document.getElementById('userGate');
+      if (gate && !gate.hidden) {
+        if (MMB.refreshUserGate) MMB.refreshUserGate();
+        return;
+      }
+      MMB.clearActiveUser();
+      hideAuth();
+      const view = document.getElementById('view');
+      if (view) view.innerHTML = '';
+      MMB.showUserGate(function () { startApp(); });
+      return;
+    }
     hideAuth();
     if (appStarted) {
       MMB.updateStatic();

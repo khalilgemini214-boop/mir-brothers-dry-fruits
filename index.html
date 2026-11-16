@@ -131,6 +131,10 @@
         <p id="pageSub">—</p>
       </div>
       <div class="topbar-actions">
+        <button class="topbar-user" id="userBtn" type="button" aria-label="Switch user">
+          <span class="user-avatar" id="userInitials">O</span>
+          <span class="user-meta"><strong id="userName">Owner</strong><small id="userRole">Full access</small></span>
+        </button>
         <span class="sync-stamp" id="syncStamp" hidden></span>
         <button class="icon-btn cloud-btn cloud-with-label" id="syncBtn" aria-label="Sync" data-i18n-title="sync.sync">
           <svg class="ic"><use href="#i-refresh"/></svg>
@@ -209,6 +213,50 @@
   </form>
 </div>
 
+<!-- ── Profile gate (first launch / after sign-in) ─────────────── -->
+<div id="userGate" class="auth-screen user-gate" hidden>
+  <div class="auth-card user-gate-card">
+    <svg class="auth-mark"><use href="#i-logo"/></svg>
+    <h2 data-i18n="users.chooseTitle">Choose user</h2>
+    <p data-i18n="users.chooseSubtitle">Select the profile for this device.</p>
+    <div class="hint" id="userGateNotice" style="margin:12px 0 2px"></div>
+    <div class="user-gate-list" id="userGateList"></div>
+
+    <div id="userGatePinBox" hidden>
+      <div class="field" style="margin-top:10px">
+        <label class="label" for="userGatePin" data-i18n="users.pin">PIN</label>
+        <input class="input num" id="userGatePin" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+      </div>
+      <div class="auth-error" id="userGatePinError"></div>
+      <button class="btn btn-primary btn-block" id="userGatePinGo" data-i18n="users.unlock">Unlock</button>
+    </div>
+
+    <div id="userGateSetup" hidden>
+      <div class="hint warn" style="margin-top:12px" data-i18n="users.ownerSetupHint">This device is being set up for the first time. Choose a name and a PIN for the owner profile.</div>
+      <div class="field" style="margin-top:10px">
+        <label class="label" for="userGateOwnerName" data-i18n="users.name">Name</label>
+        <input class="input" id="userGateOwnerName" maxlength="40" autocomplete="off" value="Owner">
+      </div>
+      <div class="field" style="margin-top:8px">
+        <label class="label" for="userGateOwnerPin" data-i18n="users.pin">PIN</label>
+        <input class="input num" id="userGateOwnerPin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password">
+      </div>
+      <div class="field" style="margin-top:8px">
+        <label class="label" for="userGateOwnerPin2" data-i18n="common.confirm">Confirm</label>
+        <input class="input num" id="userGateOwnerPin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password">
+      </div>
+      <div class="auth-error" id="userGateSetupError"></div>
+      <button class="btn btn-primary btn-block" id="userGateOwnerSave" data-i18n="users.ownerSetupSave">Set PIN and continue</button>
+    </div>
+
+    <div class="row-flex gap-8" style="margin-top:14px;flex-wrap:wrap;justify-content:center">
+      <button class="btn btn-ghost" id="userGateRefresh" data-i18n="users.refresh">Refresh users</button>
+      <button class="btn btn-ghost" id="userGateSignOut" data-i18n="users.signOut">Sign out</button>
+    </div>
+    <p class="auth-note" data-i18n="users.gateHint">Each device keeps its own profile. Full-access profiles always need a PIN.</p>
+  </div>
+</div>
+
 <!-- ── Lock screen ─────────────────────────────────────────────── -->
 <div id="lockScreen" class="lock-screen" hidden>
   <div class="lock-card">
@@ -240,6 +288,7 @@
 <script src="js/views/accounts.js"></script>
 <script src="js/views/stock.js"></script>
 <script src="js/views/settings.js"></script>
+<script src="js/users.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

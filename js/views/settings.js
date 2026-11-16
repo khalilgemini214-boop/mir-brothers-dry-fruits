@@ -87,6 +87,7 @@
 
   MMB.views.settings = {
     render: function (root) {
+      if (!MMB.isAdmin()) { MMB.navigate('dashboard'); return; }
       const s = MMB.db.settings.shop;
       const st = MMB.db.settings;
       const upd = st.updates || (st.updates = { feedUrl: '', autoCheck: true, lastCheckedAt: null });
@@ -140,6 +141,8 @@
         '<div class="setting-control"><input class="input num" id="setLowStock" type="number" step="0.1" min="0" value="' + st.lowStockKg + '"><span class="hint">kg</span></div></div>' +
         '<div class="setting-row"><div class="si">' + MMB.icon('package') + '</div><div class="setting-label"><div class="st">' + t('settings.defaultCarton') + '</div><div class="ss">' + t('stock.cartonHint') + '</div></div>' +
         '<div class="setting-control"><input class="input num" id="setCarton" type="number" step="0.1" min="0.1" value="' + st.defaultCartonKg + '"><span class="hint">kg</span></div></div>' +
+        '<div class="setting-row"><div class="si gold">' + MMB.icon('receipt') + '</div><div class="setting-label"><div class="st">' + t('settings.bardanaRate') + '</div><div class="ss">' + t('settings.bardanaRateHint') + '</div></div>' +
+        '<div class="setting-control"><input class="input num" id="setBardana" type="number" step="0.01" min="0" value="' + (MMB.num(st.bardanaRate) || 0) + '"><span class="hint">' + t('settings.perCarton') + '</span></div></div>' +
         '<div class="setting-row"><div class="si gold">' + MMB.icon('receipt') + '</div><div class="setting-label"><div class="st">' + t('settings.nextBill') + '</div><div class="ss">' + t('stock.billNo') + ' ' + MMB.nextBillNo() + '</div></div>' +
         '<div class="setting-control"><input class="input num" id="setBillNo" type="number" step="1" min="1" value="' + st.billCounter + '"></div></div>' +
         '<div class="setting-row"><div class="si gold">' + MMB.icon('package') + '</div><div class="setting-label"><div class="st">' + t('settings.nextPurchase') + '</div><div class="ss">' + MMB.nextPurchaseNo() + '</div></div>' +
@@ -154,7 +157,16 @@
         '<div class="setting-control"><div class="segmented" id="langSeg"><button data-lang="en" class="' + (MMB.lang() === 'en' ? 'active' : '') + '">English</button><button data-lang="ur" class="' + (MMB.lang() === 'ur' ? 'active' : '') + '">اردو</button></div></div></div>' +
         '<div class="setting-row"><div class="si">' + MMB.icon(st.theme === 'dark' ? 'moon' : 'sun') + '</div><div class="setting-label"><div class="st">' + t('settings.theme') + '</div><div class="ss">' + (st.theme === 'dark' ? t('settings.dark') : t('settings.light')) + '</div></div>' +
         '<div class="setting-control"><div class="segmented" id="themeSeg"><button data-theme="light" class="' + (st.theme !== 'dark' ? 'active' : '') + '">' + t('settings.light') + '</button><button data-theme="dark" class="' + (st.theme === 'dark' ? 'active' : '') + '">' + t('settings.dark') + '</button></div></div></div>' +
+        '<div class="setting-row"><div class="si blue">' + MMB.icon('receipt') + '</div><div class="setting-label"><div class="st">' + t('settings.billLanguage') + '</div><div class="ss">' + t('settings.billLanguageHint') + '</div></div>' +
+        '<div class="setting-control"><div class="segmented" id="billLangSeg">' +
+        '<button data-billlang="both" class="' + ((st.billLang || 'both') === 'both' ? 'active' : '') + '">' + t('settings.billBoth') + '</button>' +
+        '<button data-billlang="en" class="' + (st.billLang === 'en' ? 'active' : '') + '">English</button>' +
+        '<button data-billlang="ur" class="' + (st.billLang === 'ur' ? 'active' : '') + '">اردو</button>' +
+        '</div></div></div>' +
         '</div></section>' +
+
+        /* users */
+        (MMB.usersSectionHTML ? MMB.usersSectionHTML() : '') +
 
         /* security */
         '<section class="settings-group"><div class="section-head" style="margin-top:0"><div class="section-title">' + t('settings.security') + '</div></div>' +
@@ -304,6 +316,7 @@
         st2.commissionRate = MMB.clamp(MMB.num(root.querySelector('#setCommission').value), 0, 100);
         st2.lowStockKg = Math.max(0, MMB.num(root.querySelector('#setLowStock').value));
         st2.defaultCartonKg = Math.max(0.1, MMB.num(root.querySelector('#setCarton').value) || 10);
+        st2.bardanaRate = Math.max(0, MMB.num(root.querySelector('#setBardana').value));
         st2.billCounter = Math.max(1, Math.floor(MMB.num(root.querySelector('#setBillNo').value) || 1));
         st2.purchaseCounter = Math.max(1, Math.floor(MMB.num(root.querySelector('#setPurchaseNo').value) || 1));
         MMB.save();
@@ -318,6 +331,14 @@
       root.querySelectorAll('#themeSeg [data-theme]').forEach(function (b) {
         b.addEventListener('click', function () { MMB.setTheme(b.getAttribute('data-theme')); });
       });
+      root.querySelectorAll('#billLangSeg [data-billlang]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          MMB.db.settings.billLang = b.getAttribute('data-billlang');
+          MMB.save();
+          MMB.rerender();
+        });
+      });
+      if (MMB.bindUsersSection) MMB.bindUsersSection(root);
 
       /* updates */
       MMB.bindUpdateBox(root);

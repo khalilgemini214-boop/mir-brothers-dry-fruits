@@ -188,6 +188,46 @@
 
   MMB.moneyWords = function (n) { return 'Rupees ' + MMB.words(n) + ' only'; };
 
+  MMB.wordsUr = (function () {
+    const ones = ['', 'ایک', 'دو', 'تین', 'چار', 'پانچ', 'چھ', 'سات', 'آٹھ', 'نو', 'دس', 'گیارہ', 'بارہ', 'تیرہ', 'چودہ', 'پندرہ', 'سولہ', 'سترہ', 'اٹھارہ', 'انیس'];
+    const tens = ['', '', 'بیس', 'تیس', 'چالیس', 'پچاس', 'ساٹھ', 'ستر', 'اسی', 'نوے'];
+    const compounds = {
+      2: ['اکیس', 'بائیس', 'تئیس', 'چوبیس', 'پچیس', 'چھبیس', 'ستائیس', 'اٹھائیس', 'انتیس'],
+      3: ['اکتیس', 'بتیس', 'تینتیس', 'چونتیس', 'پینتیس', 'چھتیس', 'سینتیس', 'اڑتیس', 'انتالیس'],
+      4: ['اکتالیس', 'بیالیس', 'تینتالیس', 'چوالیس', 'پینتالیس', 'چھیالیس', 'سینتالیس', 'اڑتالیس', 'انچاس'],
+      5: ['اکاون', 'باون', 'ترپن', 'چون', 'پچپن', 'چھپن', 'ستاون', 'اٹھاون', 'انسٹھ'],
+      6: ['اکسٹھ', 'باسٹھ', 'ترسٹھ', 'چونسٹھ', 'پینسٹھ', 'چھیاسٹھ', 'سڑسٹھ', 'اڑسٹھ', 'انہتر'],
+      7: ['اکہتر', 'بہتر', 'تہتر', 'چوہتر', 'پچہتر', 'چھہتر', 'ستتر', 'اٹھہتر', 'اناسی'],
+      8: ['اکیاسی', 'بیاسی', 'تراسی', 'چوراسی', 'پچاسی', 'چھیاسی', 'ستاسی', 'اٹھاسی', 'نواسی'],
+      9: ['اکانوے', 'بانوے', 'ترانوے', 'چورانوے', 'پچانوے', 'چھیانوے', 'ستانوے', 'اٹھانوے', 'ننانوے']
+    };
+    const hundreds = ['', 'ایک', 'دو', 'تین', 'چار', 'پانچ', 'چھ', 'سات', 'آٹھ', 'نو'];
+    function two(n) {
+      if (n < 20) return ones[n];
+      const d = Math.floor(n / 10), u = n % 10;
+      if (!u) return tens[d];
+      return compounds[d][u - 1];
+    }
+    function three(n) {
+      const h = Math.floor(n / 100), r = n % 100;
+      return (h ? hundreds[h] + ' سو' + (r ? ' ' : '') : '') + (r ? two(r) : '');
+    }
+    return function (num) {
+      num = Math.round(Math.abs(Number(num) || 0));
+      if (!num) return 'صفر';
+      const crore = Math.floor(num / 10000000); num %= 10000000;
+      const lakh = Math.floor(num / 100000); num %= 100000;
+      const thousand = Math.floor(num / 1000); num %= 1000;
+      const parts = [];
+      if (crore) parts.push(three(crore) + ' کروڑ');
+      if (lakh) parts.push(three(lakh) + ' لاکھ');
+      if (thousand) parts.push(three(thousand) + ' ہزار');
+      if (num) parts.push(three(num));
+      return parts.join(' ');
+    };
+  })();
+  MMB.moneyWordsUr = function (n) { return MMB.wordsUr(n) + ' روپے صرف'; };
+
   MMB.asyncHash = async function (text) {
     try {
       if (window.crypto && crypto.subtle && crypto.subtle.digest) {

@@ -93,6 +93,9 @@
     }
     if (persistence) { try { await persistence; } catch (e) { /* ignore */ } }
     lastError = null;
+    // Clear the previous app profile before Firebase emits the new auth
+    // state, so a different Firebase account never inherits it.
+    if (MMB.clearActiveUser) MMB.clearActiveUser();
     const cred = await auth.signInWithEmailAndPassword(email, password);
     setSessionHint(true);
     return cred;
@@ -100,6 +103,7 @@
 
   async function signOut() {
     setSessionHint(false);
+    if (MMB.clearActiveUser) MMB.clearActiveUser();
     if (!auth) return;
     await auth.signOut();
   }

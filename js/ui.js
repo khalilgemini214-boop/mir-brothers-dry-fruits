@@ -266,6 +266,7 @@
 
   /* ── account form ─────────────────────────────────────────── */
   MMB.openAccountForm = function (opts) {
+    if (!MMB.isAdmin()) { MMB.toast(t('users.readonly'), 'error'); return; }
     opts = opts || {};
     const account = opts.account || null;
     let type = account ? account.type : (opts.type || 'customer');
@@ -365,6 +366,7 @@
 
   /* ── product form ─────────────────────────────────────────── */
   MMB.openProductForm = function (opts) {
+    if (!MMB.isAdmin()) { MMB.toast(t('users.readonly'), 'error'); return; }
     opts = opts || {};
     const p = opts.product || null;
     const isEdit = !!p;
@@ -458,15 +460,24 @@
     const broker = sale.brokerId ? MMB.account(sale.brokerId) : null;
     const logo = shop.logo ? '<img class="bill-logo" src="' + shop.logo + '" alt="">' : '<div class="bill-logo">' + MMB.logoSVG(52) + '</div>';
     const phones = (shop.phones || []).join(' · ');
-    // The bill is always bilingual, regardless of the app language.
+    const mode = MMB.db.settings.billLang === 'en' || MMB.db.settings.billLang === 'ur' ? MMB.db.settings.billLang : 'both';
+    const both = mode === 'both';
+    const urOnly = mode === 'ur';
     const te = function (k) { return MMB.tIn('en', k); };
     const tu = function (k) { return MMB.tIn('ur', k); };
-    const cLabels = {
-      bardana: te('stock.bardana'), dalali: te('stock.dalali'), nikhara: te('stock.nikhara'),
-      chhappai: te('stock.chhappai'), pehri: te('stock.pehri'), tulai: te('stock.tulai'), other: te('stock.other')
+    const L = function (enKey, urKey) {
+      const u = urKey || enKey;
+      if (mode === 'en') return te(enKey);
+      if (urOnly) return tu(u);
+      return te(enKey) + ' / ' + tu(u);
+    };
+    const chargeLabel = function (k) {
+      if (mode === 'en') return te('stock.' + k);
+      if (urOnly) return tu('stock.' + k);
+      return te('stock.' + k) + ' / ' + tu('stock.' + k);
     };
     const chargeRows = Object.keys(sale.charges || {}).filter(function (k) { return MMB.num(sale.charges[k]) > 0; }).map(function (k) {
-      return '<tr><td>' + cLabels[k] + '</td><td class="r">' + MMB.money(sale.charges[k], { bare: true }) + '</td></tr>';
+      return '<tr><td>' + MMB.esc(chargeLabel(k)) + '</td><td class="r">' + MMB.money(sale.charges[k], { bare: true }) + '</td></tr>';
     }).join('');
 
     const itemRows = sale.lines.map(function (l) {
@@ -477,32 +488,42 @@
         '<td class="r">' + MMB.money(l.amount, { bare: true }) + '</td></tr>';
     }).join('');
 
-    return '<div class="bill">' +
-      '<div class="bill-head">' + logo +
-      '<div class="bill-brand"><h1>' + MMB.esc(shop.nameEn) + '</h1><div class="tag">' + MMB.esc(shop.taglineEn).toUpperCase() + '</div>' +
-      '<div class="ur">' + MMB.esc(shop.nameUr) + '</div></div>' +
-      '<div class="bill-contact"><div class="ph">' + MMB.esc(phones) + '</div><div>' + MMB.esc(shop.addressEn) + '</div><div class="bill-urdu" style="font-size:8pt">' + MMB.esc(shop.addressUr) + '</div></div></div>' +
+    const brand = urOnly
+      ? '<div class="bill-brand ur-brand"><h1 class="ur">' + MMB.esc(shop.nameUr) + '</h1><div class="tag ur">' + MMB.esc(shop.taglineUr) + '</div></div>'
+      : '<div class="bill-brand"><h1>' + MMB.esc(shop.nameEn) + '</h1><div class="tag">' + MMB.esc(shop.taglineEn).toUpperCase() + '</div>' +
+      (both ? '<div class="ur">' + MMB.esc(shop.nameUr) + '</div>' : '') + '</div>';
+    const contact = '<div class="bill-contact"><div class="ph">' + MMB.esc(phones) + '</div>' +
+      (!urOnly ? '<div>' + MMB.esc(shop.addressEn) + '</div>' : '') +
+      (urOnly || both ? '<div class="bill-urdu" style="font-size:8pt">' + MMB.esc(shop.addressUr) + '</div>' : '') + '</div>';
+    const titleHTML = urOnly
+      ? '<span class="ur">' + tu('bills.urduSale') + '</span>'
+      : '<span>' + te('bills.saleBill').toUpperCase() + '</span>' + (both ? '<span class="ur">' + tu('bills.urduSale') + '</span>' : '');
+    const words = urOnly ? MMB.moneyWordsUr(sale.total) : MMB.moneyWords(sale.total);
+    const thanks = urOnly ? tu('bills.urduThanks') : (both ? te('bills.thankYou') + ' · ' + tu('bills.urduThanks') : te('bills.thankYou'));
+    const cls = 'bill' + (urOnly ? ' bill-ur-only' : '') + (mode === 'en' ? ' bill-en-only' : '');
+
+    return '<div class="' + cls + '"' + (urOnly ? ' dir="rtl"' : '') + '>' +
+      '<div class="bill-head">' + logo + brand + contact + '</div>' +
       '<div class="bill-meta">' +
-      '<div class="l"><span><strong>' + te('bills.billNo') + ' / ' + tu('bills.urduBillNo') + ':</strong> ' + MMB.esc(sale.billNo) + '</span>' +
-      '<span><strong>' + te('bills.date') + ' / ' + tu('bills.urduDate') + ':</strong> ' + MMB.fmtDate(sale.date) + '</span>' +
-      (sale.dueDate ? '<span><strong>' + te('common.dueDate') + ' / ' + tu('common.dueDate') + ':</strong> ' + MMB.fmtDate(sale.dueDate) + '</span>' : '') + '</div>' +
-      '<div class="l"><span><strong>' + te('bills.customer') + ' / ' + tu('bills.urduCustomer') + ':</strong> ' + MMB.esc(cust ? cust.name : '—') + '</span>' +
-      (sale.vehicle ? '<span><strong>' + te('bills.vehicle') + ' / ' + tu('bills.urduVehicle') + ':</strong> ' + MMB.esc(sale.vehicle) + '</span>' : '') +
-      (sale.destination ? '<span><strong>' + te('bills.destination') + ' / ' + tu('bills.urduDestination') + ':</strong> ' + MMB.esc(sale.destination) + '</span>' : '') + '</div>' +
-      '<div class="l">' + (broker ? '<span><strong>' + te('bills.broker') + ' / ' + tu('bills.urduBroker') + ':</strong> ' + MMB.esc(broker.name) + '</span>' : '') +
-      (cust && cust.phone ? '<span><strong>Ph:</strong> ' + MMB.esc(cust.phone) + '</span>' : '') + '</div></div>' +
-      '<div class="bill-title"><span>' + te('bills.saleBill').toUpperCase() + '</span><span class="ur">' + tu('bills.urduSale') + '</span></div>' +
-      '<table class="bill-table"><thead><tr><th style="width:50%">' + te('bills.description') + ' / ' + tu('bills.urduDescription') + '</th>' +
-      '<th style="width:14%">' + te('bills.qty') + ' / ' + tu('bills.urduQty') + '</th>' +
-      '<th style="width:16%">' + te('bills.rate') + ' / ' + tu('bills.urduRate') + '</th>' +
-      '<th style="width:20%">' + te('bills.amount') + ' / ' + tu('bills.urduAmount') + '</th></tr></thead><tbody>' + itemRows + '</tbody></table>' +
+      '<div class="l"><span><strong>' + L('bills.billNo', 'bills.urduBillNo') + ':</strong> ' + MMB.esc(sale.billNo) + '</span>' +
+      '<span><strong>' + L('bills.date', 'bills.urduDate') + ':</strong> ' + MMB.fmtDate(sale.date) + '</span>' +
+      (sale.dueDate ? '<span><strong>' + L('common.dueDate', 'common.dueDate') + ':</strong> ' + MMB.fmtDate(sale.dueDate) + '</span>' : '') + '</div>' +
+      '<div class="l"><span><strong>' + L('bills.customer', 'bills.urduCustomer') + ':</strong> ' + MMB.esc(cust ? cust.name : '—') + '</span>' +
+      (sale.vehicle ? '<span><strong>' + L('bills.vehicle', 'bills.urduVehicle') + ':</strong> ' + MMB.esc(sale.vehicle) + '</span>' : '') +
+      (sale.destination ? '<span><strong>' + L('bills.destination', 'bills.urduDestination') + ':</strong> ' + MMB.esc(sale.destination) + '</span>' : '') + '</div>' +
+      '<div class="l">' + (broker ? '<span><strong>' + L('bills.broker', 'bills.urduBroker') + ':</strong> ' + MMB.esc(broker.name) + '</span>' : '') +
+      (cust && cust.phone ? '<span><strong>' + L('common.phone', 'common.phone') + ':</strong> ' + MMB.esc(cust.phone) + '</span>' : '') + '</div></div>' +
+      '<div class="bill-title">' + titleHTML + '</div>' +
+      '<table class="bill-table"><thead><tr><th style="width:50%">' + L('bills.description', 'bills.urduDescription') + '</th>' +
+      '<th style="width:14%">' + L('bills.qty', 'bills.urduQty') + '</th>' +
+      '<th style="width:16%">' + L('bills.rate', 'bills.urduRate') + '</th>' +
+      '<th style="width:20%">' + L('bills.amount', 'bills.urduAmount') + '</th></tr></thead><tbody>' + itemRows + '</tbody></table>' +
       (chargeRows ? '<table class="bill-charges">' + chargeRows + '</table>' : '') +
-      '<div class="bill-total"><span class="k">' + te('bills.grandTotal') + ' <span class="bill-urdu">/ ' + tu('bills.urduTotal') + '</span></span><span class="v">Rs ' + MMB.money(sale.total, { bare: true }) + '</span></div>' +
-      '<div class="bill-words"><strong>' + te('bills.amountInWords') + ' / ' + tu('bills.urduWords') + ':</strong> ' + MMB.esc(MMB.moneyWords(sale.total)) + '</div>' +
-      '<div class="bill-foot"><div>' + (sale.note ? '<div><strong>' + te('common.notes') + ':</strong> ' + MMB.esc(sale.note) + '</div>' : '') +
-      '<div class="bill-urdu">' + tu('bills.urduThanks') + '</div></div>' +
-      '<div class="bill-sign">' + te('bills.signature') + '<div class="bill-urdu">' + tu('bills.urduSignature') + '</div></div></div>' +
-      '<div class="bill-note">' + te('bills.thankYou') + ' · ' + MMB.esc(shop.nameEn) + '</div>' +
+      '<div class="bill-total"><span class="k">' + L('bills.grandTotal', 'bills.urduTotal') + '</span><span class="v">' + (urOnly ? 'روپے ' : 'Rs ') + MMB.money(sale.total, { bare: true }) + '</span></div>' +
+      '<div class="bill-words"><strong>' + L('bills.amountInWords', 'bills.urduWords') + ':</strong> ' + MMB.esc(words) + '</div>' +
+      '<div class="bill-foot"><div>' + (sale.note ? '<div><strong>' + L('common.notes', 'common.notes') + ':</strong> ' + MMB.esc(sale.note) + '</div>' : '') + '</div>' +
+      '<div class="bill-sign">' + L('bills.signature', 'bills.urduSignature') + '</div></div>' +
+      '<div class="bill-note">' + thanks + ' · ' + MMB.esc(urOnly ? shop.nameUr : shop.nameEn) + '</div>' +
       '<div class="bill-credit">Software by Paiwand Softwares - 0331-8625942</div>' +
       '</div>';
   };

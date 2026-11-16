@@ -62,6 +62,7 @@
   MMB.views.dashboard = {
     render: function (root) {
       const db = MMB.db;
+      const liveProducts = MMB.searchProducts('');
       const shop = db.settings.shop;
       const sd = MMB.computeStock();
       const today = MMB.todayStats(sd);
@@ -93,7 +94,7 @@
       const topCustomers = Object.keys(customerTotals).map(function (id) {
         return { account: MMB.account(id), total: customerTotals[id].total, count: customerTotals[id].count };
       }).filter(function (x) { return x.account; }).sort(function (a, b) { return b.total - a.total; }).slice(0, 5);
-      const stockProducts = db.products.map(function (p) {
+      const stockProducts = liveProducts.map(function (p) {
         const st = sd.states[p.id] || { qty: 0, value: 0, avg: 0 };
         return { product: p, qty: st.qty, value: st.value, avg: st.avg };
       }).filter(function (x) { return x.qty > 0; }).sort(function (a, b) { return b.value - a.value; }).slice(0, 5);
@@ -110,8 +111,8 @@
         '<div class="hero-date">' + MMB.icon('calendar') + MMB.fmtDate(todayISO) + ' · ' + MMB.weekday(todayISO) + '</div>' +
         '<div class="hero-grid"><div class="hero-main">' +
         '<div class="hero-stat"><div class="k">' + t('dashboard.todaySales') + '</div><div class="v num">' + MMB.money(today.salesTotal) + '</div><div class="s">' + today.salesCount + ' ' + (today.salesCount === 1 ? t('stock.sale') : t('stock.sales')) + '</div></div>' +
-        '<div class="hero-stat"><div class="k">' + t('dashboard.todayProfit') + '</div><div class="v ' + (today.profit >= 0 ? 'positive' : 'negative') + ' num">' + MMB.money(today.profit) + '</div><div class="s">' + t('dashboard.thisMonthSummary') + ': ' + MMB.money(month.profit) + '</div></div>' +
-        '</div><div class="hero-actions">' +
+        '<div class="hero-stat admin-only"><div class="k">' + t('dashboard.todayProfit') + '</div><div class="v ' + (today.profit >= 0 ? 'positive' : 'negative') + ' num">' + MMB.money(today.profit) + '</div><div class="s">' + t('dashboard.thisMonthSummary') + ': ' + MMB.money(month.profit) + '</div></div>' +
+        '</div><div class="hero-actions admin-only">' +
         '<button class="btn btn-gold" data-action="sale">' + MMB.icon('plus') + t('dashboard.newSale') + '</button>' +
         '<button class="btn btn-ghost" data-action="purchase">' + MMB.icon('package') + t('dashboard.newPurchase') + '</button>' +
         '</div></div>' + heroArt() + '</section>' +
@@ -128,7 +129,7 @@
         '<div class="stat-value num">' + MMB.money(summary.cash) + '</div><div class="stat-sub"><span class="dot"></span>' + t('dashboard.cashInHand') + '</div></button>' +
         '<button class="stat-card" data-action="stock" style="text-align:start">' +
         '<div class="stat-top"><div class="stat-icon gold"><svg class="ic"><use href="#i-package"/></svg></div><span class="badge badge-gold">' + t('dashboard.stockValue') + '</span></div>' +
-        '<div class="stat-value num">' + MMB.money(totals.value) + '</div><div class="stat-sub"><span class="dot"></span>' + MMB.qty(totals.qty, 'kg') + ' · ' + db.products.length + ' ' + (db.products.length === 1 ? t('stock.product') : t('dashboard.products')) + '</div></button>' +
+        '<div class="stat-value num">' + MMB.money(totals.value) + '</div><div class="stat-sub"><span class="dot"></span>' + MMB.qty(totals.qty, 'kg') + ' · ' + liveProducts.length + ' ' + (liveProducts.length === 1 ? t('stock.product') : t('dashboard.products')) + '</div></button>' +
         '</div>' +
 
         (dueTotals.total > 0.0049
@@ -141,7 +142,7 @@
           MMB.icon('chevron-right', 'row-arrow') + '</button>'
           : '') +
 
-        '<div class="grid" style="grid-template-columns:1.55fr .9fr;margin-top:15px" id="dashMid">' +
+        '<div class="grid admin-only" style="grid-template-columns:1.55fr .9fr;margin-top:15px" id="dashMid">' +
         '<section class="card card-pad">' +
         '<div class="section-head" style="margin-top:0"><div class="section-title">' + t('dashboard.salesProfit') + '</div>' +
         '<div class="chart-tabs" id="chartTabs"><button class="' + (chartRange === 7 ? 'active' : '') + '" data-range="7">' + t('dashboard.last7') + '</button><button class="' + (chartRange === 30 ? 'active' : '') + '" data-range="30">' + t('dashboard.last30') + '</button></div></div>' +
@@ -166,6 +167,16 @@
         '<button class="btn btn-soft btn-block" style="margin-top:14px" data-action="stock">' + t('dashboard.viewStock') + MMB.icon('chevron-right') + '</button>' +
         '</section></div>' +
 
+        '<section class="card card-pad viewer-only" style="margin-top:15px">' +
+        '<div class="section-head" style="margin-top:0"><div class="section-title">' + t('dashboard.thisMonthSummary') + '</div><span class="badge badge-gray">' + salesCount + ' ' + (salesCount === 1 ? t('stock.sale') : t('stock.sales')) + '</span></div>' +
+        '<div class="month-grid">' +
+        '<div class="month-cell"><div class="k">' + t('dashboard.monthSales') + '</div><div class="v">' + MMB.money(month.salesTotal) + '</div></div>' +
+        '<div class="month-cell"><div class="k">' + t('dashboard.purchases') + '</div><div class="v">' + MMB.money(month.purchasesTotal) + '</div></div>' +
+        '</div>' +
+        '<button class="btn btn-soft btn-block" style="margin-top:14px" data-action="stock">' + t('dashboard.viewStock') + MMB.icon('chevron-right') + '</button>' +
+        '</section>' +
+
+        '<div class="admin-only">' +
         '<div class="section-head"><div class="section-title">' + t('dashboard.quickActions') + '</div></div>' +
         '<div class="quick-grid stagger">' +
         '<button class="quick-btn" data-action="sale"><div class="qi">' + MMB.icon('receipt') + '</div><div><div class="qt">' + t('dashboard.newSale') + '</div><div class="qs">' + t('dashboard.quickSaleHint') + '</div></div></button>' +
@@ -173,14 +184,15 @@
         '<button class="quick-btn" data-action="newAccount"><div class="qi blue">' + MMB.icon('users') + '</div><div><div class="qt">' + t('dashboard.newAccount') + '</div><div class="qs">' + t('dashboard.quickAccountHint') + '</div></div></button>' +
         '<button class="quick-btn" data-action="adjust"><div class="qi red">' + MMB.icon('scale') + '</div><div><div class="qt">' + t('stock.adjust') + '</div><div class="qs">' + t('dashboard.quickStockHint') + '</div></div></button>' +
         '</div>' +
+        '</div>' +
 
         '<div class="grid cols-2" style="margin-top:22px">' +
         '<section class="card card-pad"><div class="section-head" style="margin-top:0"><div class="section-title">' + t('dashboard.recent') + '</div></div>' + activityHTML(recent) + '</section>' +
         '<section class="card card-pad"><div class="section-head" style="margin-top:0"><div class="section-title">' + t('dashboard.lowStock') + '</div><button class="link-btn" data-action="stock">' + t('dashboard.viewAll') + MMB.icon('chevron-right') + '</button></div>' + lowStockHTML(low) + '</section>' +
         '</div>' +
 
-        '<div class="grid cols-2" style="margin-top:15px">' +
-        '<section class="card card-pad"><div class="section-head" style="margin-top:0"><div class="section-title">' + t('dashboard.topCustomers') + '</div></div>' +
+        '<div class="grid cols-2 dash-lower" style="margin-top:15px">' +
+        '<section class="card card-pad admin-only"><div class="section-head" style="margin-top:0"><div class="section-title">' + t('dashboard.topCustomers') + '</div></div>' +
         (topCustomers.length ? '<div class="party-list" style="padding:0">' + topCustomers.map(function (x) {
           return '<button class="party-item" data-cust="' + x.account.id + '">' +
             MMB.avatar(x.account.name, MMB.hashColor(x.account.name)) +
